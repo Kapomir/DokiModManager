@@ -1,5 +1,6 @@
 <!-- Modified for the local macOS fixes, 2026-11-19. -->
 <script setup>
+import {CLIENT_VERSION} from "./core/VersionHandler";
 </script>
 
 <template>
@@ -9,7 +10,7 @@
     <div class="background"></div>
     <button class="import-zip hide" id="select-zip">Import Zip</button>
     <header class="load-subtitle" id="loadingsub">PLEASE REFRESH THIS APPLICATION (Control + R)</header>
-    <header class="load-title" id="loadinghead">Doki Doki Mod Manager <span class="load-title-version" id="load-title-version">/ 1.8.0</span></header>
+    <header class="load-title" id="loadinghead">Doki Doki Mod Manager <span class="load-title-version" id="load-title-version">/ {{ CLIENT_VERSION }}</span></header>
 
     <div class="wheel" id="throbber"></div>
     <div class="loading-bar">
@@ -28,7 +29,7 @@
     <header class="title"><span class="title-colored">Doki Doki</span> Mod Manager</header>
     <div class="container-a smooth-hide" id="modlist">
       <header class="sidetext sticky"><span id="main-text">Main</span> <span
-          style="font-weight: normal; font-size: 0.75rem; cursor: grab; color: rgb(220,220,220)" id="version">(v1.0.0-release)</span>
+          style="font-weight: normal; font-size: 0.75rem; cursor: grab; color: rgb(220,220,220)" id="version">({{ CLIENT_VERSION }})</span>
       </header>
       <button class="sidebutton sidebutton2 sticky" id="options"><span
           style="font-family: Icon,serif; padding-right: 10px;">&#61669;</span> <span id="home-text">Home</span>
@@ -85,7 +86,8 @@
       </div>
 
       <header class="rename-header hide" style="left: 28rem;" id="setinfo-header"><span style="font-family: Icon;">&#62551; </span>
-        <span id="description-text">Description</span></header>
+        <span id="description-text">Description</span>
+        <button id="description-edit" class="description-edit-button" title="Edit mod description">Edit</button></header>
       <div class="info hide" id="info"></div>
 
       <div id="optionsmenu" class="hide">
@@ -198,6 +200,14 @@
       </div>
       <div class="image-picker-items" id="image-picker-items"></div>
     </div>
+    <section class="description-editor hide" id="description-editor" role="dialog" aria-modal="true" aria-labelledby="description-editor-title">
+      <h2 id="description-editor-title">Edit description</h2>
+      <textarea id="description-input" maxlength="10000" placeholder="Add your own description…" aria-label="Mod description" spellcheck="true"></textarea>
+      <div class="description-editor-actions">
+        <button id="description-cancel">Cancel</button>
+        <button id="description-save">Save description</button>
+      </div>
+    </section>
     <div class="report-bg smooth-hide hide" id="report-bg">
       <header class="report-title" id="report-title">Report Issue</header>
       <textarea class="report-textbox" id="report-textc"

@@ -1,16 +1,17 @@
 {
   "name": "dokimodmanager",
   "private": true,
-  "version": "1.8.1",
+  "version": "1.8.1-kapomir.2",
   "type": "module",
   "scripts": {
     "test": "node --experimental-vm-modules --test tests/*.test.mjs",
     "test:rename": "mkdir -p src-tauri/target && rustc --edition=2021 --test src-tauri/src/mod_rename.rs -o src-tauri/target/mod-rename-tests && src-tauri/target/mod-rename-tests",
     "test:ui": "node tests/ui/verify.mjs",
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run check:version && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "check:version": "node scripts/check-version.mjs"
   },
   "dependencies": {
     "@aptabase/tauri": "^0.4.1",

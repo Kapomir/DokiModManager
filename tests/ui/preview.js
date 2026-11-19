@@ -1,6 +1,9 @@
 // Local macOS UI regression fixture, 2026-11-19. All file I/O stays in memory.
 import {createApp} from "vue";
 import App from "../../src/App.vue";
+import Desktop from "../../src/Desktop.vue";
+import {CLIENT_VERSION, FORK_URL, FORK_RELEASES_URL, isNewerForkVersion} from "../../src/core/VersionHandler.js";
+import {descriptionHtml, updateModDescription} from "../../src/core/utils/ModDescription.js";
 import "../../src/styles.css";
 import source from "../../src/main.js?raw";
 import * as images from "../../src/core/utils/ImageUtils.js";
@@ -14,7 +17,7 @@ const files = new Map();
 const messages = [];
 let dialogSelection = null;
 let selectedCover = null;
-const loadedModData = {coverId: 0};
+const loadedModData = {coverId: 0, executable: "DDLC.app/Contents/MacOS/DDLC", time: 123};
 window.__TAURI_INTERNALS__ = {invoke: async (command, args, options) => {
     if (command === "plugin:dialog|open") return dialogSelection;
     if (command === "plugin:fs|mkdir") return;
@@ -32,29 +35,46 @@ window.__TAURI_INTERNALS__ = {invoke: async (command, args, options) => {
     throw new Error("Unexpected fixture IPC: " + command);
 }};
 
-createApp(App).mount("#app");
+const fixtureApp = createApp(App);
+fixtureApp.mount("#app");
 document.documentElement.setAttribute("os-type", "linux");
 document.documentElement.setAttribute("mac-type", "mac");
 Hud.hide("loader");
 Hud.show("main");
-for (const id of ["cove", "modtitle", "modinfo", "play", "path", "delete-save"]) Hud.show(id);
+Hud.ofId("warn").remove();
+for (const id of ["cove", "modtitle", "modinfo", "play", "path", "delete-save", "info", "setinfo-header"]) Hud.show(id);
 Hud.hide("covers");
+Hud.ofId("info").classList.add("expanded");
+Hud.ofId("setinfo-header").style.left = "16rem";
 Hud.ofId("modtitle").value = "Synthetic Mod With A Long Editable Name";
 Hud.ofId("modinfo").textContent = "Synthetic fixture — no installed mods loaded";
 
 const env = {
-    ...images, Hud, DOMBatch, importImages, open,
+    ...images, Hud, DOMBatch, importImages, open, createApp, Desktop,
+    previous_app: fixtureApp, desktopOpen: false, CLIENT_VERSION, FORK_URL, FORK_RELEASES_URL,
+    CLIENT_START: Date.now() - 5000, isNewerForkVersion, descriptionHtml,
+    descriptionTarget: null, savingDescription: false,
+    getLatest: async () => CLIENT_VERSION + "\nFixture release notes",
+    openUrl: async url => messages.push("URL: " + url),
+    invoke: async command => messages.push("IPC: " + command),
     localPath: "/fixture", fileTerminator: "/", currentEntry: "synthetic",
     currentBackgroundCover: "DefaultCovers/house.webp", importingImages: false,
     STRINGS: {EMPTY: ""}, terminatePath: path => path.replaceAll("\\", "/"),
     Optional: {readDir: async directory => ({isSome: () => true, getResult: async () =>
         [...files.keys()].filter(path => path.startsWith(directory + "/"))
             .map(path => ({name: path.slice(directory.length + 1), isDirectory: false}))})},
-    Logger: {warn: (...args) => messages.push(args.join(" "))},
+    Logger: {warn: (...args) => messages.push(args.join(" ")), instant: () =>
+        Array.from({length: 30}, (_, i) => ({msg: `Synthetic log ${i} — <not markup> ` + "long text ".repeat(10), timestamp: Date.now() - i * 10, isWarn: i % 5 === 0}))},
     confirm: async message => messages.push(message),
     AssetsManager: {Sound: {play() {}}},
     setCover: async id => { selectedCover = id; },
-    getLauncher: () => ({getFunctions: () => ({setCover: async id => {
+    getLauncher: () => ({getFunctions: () => ({
+        getData: async () => loadedModData,
+        setDescription: async text => updateModDescription(loadedModData, text, async () => {
+            files.set("/fixture/mod/.ddmm.config.json", new TextEncoder().encode(JSON.stringify(loadedModData)));
+        }),
+        leftClick: async () => { Hud.ofId("info").innerHTML = descriptionHtml(loadedModData.description, "Ren’Py: synthetic<br>Credits: original author"); },
+        setCover: async id => {
         selectedCover = images.coverIdToShortMap.get(id);
         loadedModData.coverId = id;
         Hud.ofId("cove").style.backgroundImage = `url("${images.preloadCovers.ofCover(id).src}")`;
@@ -62,13 +82,16 @@ const env = {
     getLaunchers: () => ({synthetic: {getFunctions: () => ({getData: async () => loadedModData})}})
 };
 
-const names = ["syncCovers", "updateCoverImages", "selectImageFiles", "addImagesToLibrary"];
+const names = ["syncCovers", "updateCoverImages", "selectImageFiles", "addImagesToLibrary", "updateClient", "launchDesktop", "openDescriptionEditor", "closeDescriptionEditor", "saveDescription"];
 const functions = names.map(name => {
-    const start = source.indexOf(`async function ${name}(`);
+    const start = source.search(new RegExp(`(?:async )?function ${name}\\(`));
     return source.slice(start, source.indexOf("\n}", start) + 2);
 }).join("\n");
 const api = new Function("env", `with (env) { ${functions}; return {${names.join(",")}}; }`)(env);
 Hud.onClick("importimage", api.selectImageFiles);
+Hud.onClick("description-edit", api.openDescriptionEditor);
+Hud.onClick("description-cancel", api.closeDescriptionEditor);
+Hud.onClick("description-save", api.saveDescription);
 Hud.onClick("image-picker-import", api.selectImageFiles);
 Hud.onClick("image-picker-cancel", () => {
     Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");

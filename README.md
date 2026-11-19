@@ -1,3 +1,29 @@
+# Kapomir macOS fork — 1.8.1-kapomir.2
+
+This fork of [BKunzite/DokiModManager](https://github.com/BKunzite/DokiModManager)
+adds macOS fixes for mod renaming, custom cover imports, the image picker,
+the Updates panel, and editable mod descriptions. The original project is by
+BKunzite. The original Apache-2.0 [LICENSE](LICENSE), upstream credits below,
+and the fork [NOTICE](NOTICE) are retained.
+
+The active fork branch is `macos`. Version labels and update metadata refer
+to this fork. Updates open this fork's releases page for a manual download;
+they do not replace the application with an upstream installer.
+
+To edit a mod description, select the mod and click **Edit** next to
+**Description**. Save commits the text to the manager's `.ddmm.config.json`;
+Cancel leaves it unchanged. **Game details & credits** keeps the original
+technical information accessible. No game scripts or saves are changed.
+
+Development: `npm ci --ignore-scripts`, `npm test`, `npm run test:rename`,
+and `npm run build`. `npm run check:version` verifies all active version
+metadata against `version.json`. See [LOCAL_MACOS_FIXES.txt](LOCAL_MACOS_FIXES.txt)
+for isolated WebKit tests and macOS build instructions.
+
+---
+
+## Original upstream README and credits
+
 ![Doki Doki Mod Manager 1.8.0 Artwork](Artwork/ddmm1.8.0.png)
 
 <div align="center">

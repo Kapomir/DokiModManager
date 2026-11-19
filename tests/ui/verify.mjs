@@ -11,6 +11,7 @@ const results = [];
 try {
     for (const viewport of [{width: 1200, height: 600}, {width: 1000, height: 600}, {width: 1440, height: 900}]) {
         const page = await browser.newPage({viewport, deviceScaleFactor: 2});
+        page.setDefaultTimeout(8000);
         const errors = [];
         page.on("pageerror", error => errors.push(String(error)));
         await page.goto((process.env.UI_BASE_URL || "http://127.0.0.1:1420") + "/tests/ui/preview.html");
@@ -24,6 +25,18 @@ try {
         });
         assert.equal(initial.count, 6);
         assert.ok(initial.dimensions.every(([width, height]) => width > 0 && height > 0));
+        const rows = await page.evaluate(() => [...document.querySelectorAll(".image-picker-cover")].map(card => {
+            const r = card.getBoundingClientRect(); return {top:r.top,bottom:r.bottom};
+        }));
+        for (let i = 0; i < rows.length - 2; i++) assert.ok(rows[i].bottom < rows[i + 2].top, "Image rows must not overlap");
+        const firstRow = await page.evaluate(() => {
+            const items = document.getElementById("image-picker-items").getBoundingClientRect();
+            const cards = [...document.querySelectorAll(".image-picker-cover")].slice(0, 2).map(card => card.getBoundingClientRect());
+            return {leftGap: cards[0].left - items.left, rightGap: items.right - cards[1].right,
+                sameRow: Math.abs(cards[0].top - cards[1].top) < 1};
+        });
+        assert.ok(firstRow.sameRow && Math.abs(firstRow.leftGap) <= 1 && Math.abs(firstRow.rightGap) <= 1,
+            "Default images must fill both columns without a blank strip on the right");
 
         // Decode real browser-produced PNG/JPEG/WebP and an SVG with the correct MIME.
         const decoded = await page.evaluate(async () => {
@@ -86,12 +99,45 @@ try {
         }));
         assert.equal(identity.stored, selected, "Library refresh must retain the selected cover identity");
         assert.equal(identity.resolved, true, "Stable filenames must resolve in both the mod and playing-game cover");
+        await page.locator("#image-picker-cancel").click();
+        await page.locator("#description-edit").click();
+        const description = 'My description\nA&B <img src=x onerror="bad()">';
+        await page.locator("#description-input").fill(description);
+        await page.locator("#description-save").click();
+        assert.equal(await page.locator(".mod-description-text").textContent(), description);
+        assert.equal(await page.locator(".mod-description-text img").count(), 0);
+        const stored = await page.evaluate(() => JSON.parse(new TextDecoder().decode(window.fixture.files.get("/fixture/mod/.ddmm.config.json"))));
+        assert.equal(stored.description, description);
+        assert.equal(stored.executable, "DDLC.app/Contents/MacOS/DDLC");
+        assert.equal(stored.time, 123);
+        await page.locator("#description-edit").click();
+        assert.equal(await page.locator("#description-input").inputValue(), description);
+        await page.locator("#description-input").fill("discard these edits");
+        await page.locator("#description-cancel").click();
+        assert.equal(await page.locator(".mod-description-text").textContent(), description);
+        await page.screenshot({path: path.join(output, `webkit-description-${viewport.width}x${viewport.height}.png`)});
+
+        await page.evaluate(() => window.fixture.api.launchDesktop());
+        assert.match(await page.locator("#desktop-version").textContent(), /1\.8\.1-kapomir\.2/);
+        await page.locator("#desktop-update").click();
+        await page.waitForFunction(() => !document.getElementById("desktop-update").disabled);
+        assert.match(await page.locator("#desktop-update-status").textContent(), /No newer Kapomir version/);
+        const updateBounds = await page.evaluate(() => {
+            const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}; };
+            return {release:rect(".release-panel"),logs:rect(".logs-panel"),header:rect(".updates-heading"),footer:rect(".updates-footer")};
+        });
+        assert.ok(updateBounds.release.right <= updateBounds.logs.left);
+        assert.ok(updateBounds.header.bottom <= updateBounds.release.top);
+        assert.ok(updateBounds.logs.bottom <= updateBounds.footer.top);
+        assert.ok(updateBounds.footer.bottom <= viewport.height);
+        assert.equal(await page.locator("#console .console-text-holder").count(), 30);
+        await page.screenshot({path: path.join(output, `webkit-updates-${viewport.width}x${viewport.height}.png`)});
         assert.deepEqual(errors, []);
         results.push({viewport, imagesDecoded: decoded, imported: library.length, selected, bounds, errors});
         await page.close();
     }
     await fs.writeFile(path.join(output, "webkit-results.json"), JSON.stringify(results, null, 2));
-    console.log(`PASS: WebKit at ${results.map(r => `${r.viewport.width}×${r.viewport.height}`).join(", ")}; real image decoding, import, selection, invalid images, and layout.`);
+    console.log(`PASS: WebKit at ${results.map(r => `${r.viewport.width}×${r.viewport.height}`).join(", ")}; images fill the picker, descriptions save/cancel safely, fork versions match, and Updates panels do not overlap.`);
 } finally {
     await browser.close();
 }

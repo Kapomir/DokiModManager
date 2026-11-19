@@ -241,3 +241,100 @@ test("corrupt and unsupported images are reported without copying them", async t
     await assert.rejects(fs.stat(library), {code: "ENOENT"});
     assert.equal(await fs.readFile(bad, "utf8"), "not a png");
 });
+
+const textModule = await loadModule("../src/core/utils/TextUtil.js", {});
+const descriptions = await loadModule("../src/core/utils/ModDescription.js", {"./TextUtil": {htmlEscape: textModule.htmlEscape}});
+
+test("description save preserves all existing metadata and accepts clearing", async () => {
+    const config = {executable: "DDLC.app/Contents/MacOS/DDLC", coverId: "custom.svg", time: 45, extension: {keep: true}};
+    const original = structuredClone(config);
+    let written;
+    await descriptions.updateModDescription(config, "My description\nA&B <tag>", async () => { written = structuredClone(config); });
+    assert.deepEqual(written, {...original, description: "My description\nA&B <tag>"});
+    await descriptions.updateModDescription(config, "", async () => {});
+    assert.equal(config.description, "");
+    assert.deepEqual({...config, description: undefined}, {...original, description: undefined});
+});
+
+test("description save failure restores the prior value and rejects oversized input", async () => {
+    const config = {description: "keep", time: 45};
+    await assert.rejects(descriptions.updateModDescription(config, "new", async () => { throw new Error("disk failure"); }));
+    assert.equal(config.description, "keep");
+    const empty = {time: 45};
+    await assert.rejects(descriptions.updateModDescription(empty, "new", async () => { throw new Error("disk failure"); }));
+    assert.equal(Object.hasOwn(empty, "description"), false);
+    await assert.rejects(descriptions.updateModDescription(config, "x".repeat(10001), () => assert.fail()));
+});
+
+test("description text is escaped while the technical details remain available", () => {
+    const html = descriptions.descriptionHtml('<img src=x onerror="bad()"> & B', "Ren’Py: synthetic<br>Credits: original author");
+    assert.ok(!html.includes("<img"));
+    assert.ok(html.includes("&lt;img"));
+    assert.ok(html.includes("&amp; B"));
+    assert.ok(html.includes("Game details &amp; credits"));
+    assert.ok(html.includes("Credits: original author"));
+});
+
+test("fork updates compare numeric fork revisions and never offer upstream/downgrade versions", async () => {
+    const {isNewerForkVersion} = await loadModule("../src/core/utils/ForkVersion.js", {});
+    assert.equal(isNewerForkVersion("1.8.1-kapomir.3", "1.8.1-kapomir.2"), true);
+    assert.equal(isNewerForkVersion("1.8.1-kapomir.10", "1.8.1-kapomir.2"), true);
+    assert.equal(isNewerForkVersion("1.8.2-kapomir.1", "1.8.1-kapomir.2"), true);
+    for (const candidate of ["1.8.1-kapomir.1", "1.8.1-kapomir.2", "1.8.2", "1.8.1-release", "invalid"]) {
+        assert.equal(isNewerForkVersion(candidate, "1.8.1-kapomir.2"), false, candidate);
+    }
+});
+
+test("Updates mode does not tick controls removed from the main view", async () => {
+    let ticks = 0;
+    const context = vm.createContext({desktopOpen: true, Logger: {tick: () => ticks++}, Hud: {tick: () => assert.fail("main UI is unmounted")}});
+    vm.runInContext(functionSource("mainTicker"), context);
+    await context.mainTicker();
+    assert.equal(ticks, 1);
+});
+
+test("cancelling description edits does not save or mutate the mod", async () => {
+    const input = {value: ""};
+    let writes = 0;
+    const config = {description: "keep"};
+    const context = vm.createContext({currentEntry: "synthetic", savingDescription: false, descriptionTarget: null,
+        getLauncher: () => ({getFunctions: () => ({getData: async () => config, setDescription: () => writes++})}),
+        Hud: {ofId: () => input, show() {}, hide() {}},});
+    input.focus = () => {};
+    const start = main.indexOf("function closeDescriptionEditor()");
+    const end = main.indexOf("\n}", start) + 2;
+    vm.runInContext(functionSource("openDescriptionEditor") + "\n" + main.slice(start, end), context);
+    await context.openDescriptionEditor();
+    input.value = "discard this";
+    context.closeDescriptionEditor();
+    assert.equal(config.description, "keep");
+    assert.equal(writes, 0);
+    assert.equal(context.descriptionTarget, null);
+});
+
+test("version checks use the fork branch and accept a newer fork release", async () => {
+    const version = JSON.parse(await fs.readFile(new URL("../version.json", import.meta.url)));
+    const comparator = await loadModule("../src/core/utils/ForkVersion.js", {});
+    let requested;
+    const handler = await loadModule("../src/core/VersionHandler.js", {
+        "./utils/Logger": {default: {warn() {}}}, "../../version.json": {default: version},
+        "./utils/ForkVersion.js": {isNewerForkVersion: comparator.isNewerForkVersion}
+    }, {AbortController, setTimeout, clearTimeout,
+        fetch: async url => {requested = url; return {ok: true, text: async () => "1.8.1-kapomir.3\nFork notes"};}});
+    assert.equal(await handler.shouldUpdate(), true);
+    assert.equal(requested, "https://raw.githubusercontent.com/Kapomir/DokiModManager/refs/heads/macos/current_ver.txt");
+    assert.equal(handler.FORK_RELEASES_URL, "https://github.com/Kapomir/DokiModManager/releases");
+});
+
+test("a failed or foreign-channel version response falls back to the installed fork", async () => {
+    const version = JSON.parse(await fs.readFile(new URL("../version.json", import.meta.url)));
+    const comparator = await loadModule("../src/core/utils/ForkVersion.js", {});
+    for (const fetch of [async () => {throw new Error("offline");}, async () => ({ok: true, text: async () => "1.8.2-release\nUpstream notes"})]) {
+        const handler = await loadModule("../src/core/VersionHandler.js", {
+            "./utils/Logger": {default: {warn() {}}}, "../../version.json": {default: version},
+            "./utils/ForkVersion.js": {isNewerForkVersion: comparator.isNewerForkVersion}
+        }, {AbortController, setTimeout, clearTimeout, fetch});
+        assert.equal((await handler.getLatest()).split("\n")[0], version.version);
+        assert.equal(await handler.shouldUpdate(), false);
+    }
+});

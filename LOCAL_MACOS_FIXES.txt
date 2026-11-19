@@ -1,3 +1,17 @@
+Fork release 1.8.1-kapomir.2 — 2026-11-19
+
+This revision also repairs the Updates layout and ticker, removes the empty
+image-picker column, adds explicit Save/Cancel description editing, and uses
+fork-specific version metadata and manual updates. The original Apache-2.0
+LICENSE, upstream credits and original copyright are retained; see NOTICE.
+
+Descriptions use a separate description field in the existing manager JSON.
+Game details and credits are retained in a separate disclosure. Opening or
+cancelling the editor never writes metadata. A failed save restores live state.
+No game scripts, assets, save identifiers or save/profile data are rewritten.
+
+The diagnostics below document the initial 1.8.1 fix, retained for provenance.
+
 Local macOS fixes — 2026-11-19
 
 Based on BKunzite/DokiModManager tag 1.8.1-release,

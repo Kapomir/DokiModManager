@@ -1,0 +1,18 @@
+Doki Doki Mod Manager — Kapomir macOS fork
+
+Derived from BKunzite/DokiModManager (Apache License 2.0).
+Original copyright notice: Copyright 2025 @AKunzite
+Original project and author: https://github.com/BKunzite/DokiModManager
+Fork maintainer: https://github.com/Kapomir
+
+Kapomir fork modifications, 2026-11-19:
+- Correct name validation and safe mod-directory renaming on macOS.
+- Custom image import and decoded, full-width thumbnail layout.
+- Separate release notes and application logs in the Updates panel.
+- Editable descriptions stored as manager metadata, preserving game files,
+  technical details, original credits and all other metadata fields.
+- Fork-specific version labels and manual updates from this fork.
+
+The original LICENSE and upstream credits are retained. Third-party artwork
+and tools retain their existing attribution and license terms. This is an
+independent fork; it is not an official BKunzite release or an endorsement.

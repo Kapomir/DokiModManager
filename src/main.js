@@ -39,7 +39,7 @@ import {
     regexImageName,
     shortToCoverIdMap
 } from "./core/utils/ImageUtils";
-import {CLIENT_VERSION, getLatest, shouldUpdate} from "./core/VersionHandler";
+import {CLIENT_VERSION, FORK_URL, FORK_RELEASES_URL, getLatest, isNewerForkVersion} from "./core/VersionHandler";
 import {TRANSLATION_ELEMENT_MAP, TRANSLATION_TABLE, TranslationUtil} from "./core/utils/TranslationUtil"
 import {
     addLauncher,
@@ -97,6 +97,7 @@ import {getCurrentWindow} from "@tauri-apps/api/window";
 import Optional from "./core/utils/Optional";
 import WaitInterval from "./core/utils/WaitInterval";
 import {importImages} from "./core/utils/ImageImport.js";
+import {descriptionHtml, updateModDescription} from "./core/utils/ModDescription.js";
 
 //// Profile Data
 
@@ -149,6 +150,9 @@ let localPath;
 let observer;
 let renamingMod = false;
 let importingImages = false;
+let descriptionTarget = null;
+let savingDescription = false;
+let desktopOpen = false;
 
 
 /**
@@ -413,35 +417,13 @@ async function updateCoverImages(first_time = false) {
     DOMBatch.batchRender("image-picker-items", (frag) => {
 	for (const cover in preloadCovers.asList()) {
 	    let cover_img = preloadCovers.get(cover)
-	    let x = 1;
-	    let y = 1;
-	    let aspect = cover_img.naturalWidth / cover_img.naturalHeight;
-
-	    const div = document.createElement("div");
-	    const img = cover_img.cloneNode(true);
-
-	    div.classList.add("image-picker-cover");
-	    img.alt = covers.indexOf(cover) + " | " + cover
-	    img.loading = "lazy";
-	    img.decoding = "async";
-
-	    if (aspect > 1.6) {
-		x = 2;
-		img.classList.add("image-picker-cover-img");
-	    } else if (aspect > 1.2) {
-		x = 2;
-		y = 2;
-		img.classList.add("image-picker-cover-img-vertical");
-	    } else if (aspect < 0.9) {
-		y = 2;
-		img.classList.add("image-picker-cover-img-vertical");
-	    } else {
-		if (aspect > 1) {
-		    img.classList.add("image-picker-cover-img-vertical");
-		} else {
-		    img.classList.add("image-picker-cover-img");
-		}
-	    }
+            const div = document.createElement("div");
+            const img = cover_img.cloneNode(true);
+            div.classList.add("image-picker-cover");
+            img.className = "image-picker-cover-img";
+            img.alt = preloadCovers.convertToShort(cover);
+            img.loading = "lazy";
+            img.decoding = "async";
 
 	    img.addEventListener("mouseup", async (e) => {
 		if (currentEntry !== STRINGS.EMPTY && e.button === 0) {
@@ -455,7 +437,6 @@ async function updateCoverImages(first_time = false) {
 		Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
 	    })
 
-	    div.classList.add("image-" + x + "x" + y);
 	    div.appendChild(img);
 	    frag.appendChild(div);
 	}
@@ -1111,6 +1092,9 @@ async function addMod(name) {
 	getData: async () => {
 	    return configData
 	},
+        setDescription: async description => {
+            await updateModDescription(configData, description, saveModData);
+        },
 	setAuthor: async (author) => {
 	    configData.author = author;
 	    await saveModData();
@@ -1326,7 +1310,7 @@ async function addMod(name) {
 			return x[x.length - 1]
 		}
 
-	    modDescription = name +
+	    modDescription = htmlEscape(name) +
 		"<br>Renpy: "
 		+ escapedDescription
 		+ "<br>Custom Exe: " +
@@ -1354,17 +1338,17 @@ async function addMod(name) {
 	    }
 
 	    if (configData.size === 0) {
-		updateDisplayInfo(name, configData.author, "Reading...", Math.floor(playTimeMinutes / 60) + TranslationUtil.sub("timeUnits").of("h") + STRINGS.SPACE + Math.floor(playTimeMinutes % 60) + TranslationUtil.sub("timeUnits").of("m"), modDescription, "Never")
+		updateDisplayInfo(name, configData.author, "Reading...", Math.floor(playTimeMinutes / 60) + TranslationUtil.sub("timeUnits").of("h") + STRINGS.SPACE + Math.floor(playTimeMinutes % 60) + TranslationUtil.sub("timeUnits").of("m"), modDescription, "Never", configData.description)
 		setTimeout(async () => {
 		    let data = await metadata(selectedPath + fileTerminator + name);
 		    configData.size = data.size;
 		    if (currentEntry === name) {
-			updateDisplayInfo(name, configData.author, (configData.size / Units.ByteSizeMap.MB) > 1000 ? (Math.floor(configData.size / Units.ByteSizeMap.GB) + " GB") : (Math.floor(configData.size / Units.ByteSizeMap.MB) + " MB"), Math.floor(playTimeMinutes / 60) + TranslationUtil.sub("timeUnits").of("h") + STRINGS.SPACE + Math.floor(playTimeMinutes % 60) + TranslationUtil.sub("timeUnits").of("m"), name + "<br>Renpy: " + escapedDescription + "<br>Custom Exe: " + ((gameExePath !== undefined && gameExePath !== STRINGS.EMPTY && !gameExePath.toString().endsWith(OS.EXECUTABLE.WINDOWS)) ? "Yes | " + gameExePath : "No") + "<br><br>Credits: <br>" + (escapedModCredits !== undefined ? escapedModCredits : "None Found!"), lastPlayed)
+			updateDisplayInfo(name, configData.author, (configData.size / Units.ByteSizeMap.MB) > 1000 ? (Math.floor(configData.size / Units.ByteSizeMap.GB) + " GB") : (Math.floor(configData.size / Units.ByteSizeMap.MB) + " MB"), Math.floor(playTimeMinutes / 60) + TranslationUtil.sub("timeUnits").of("h") + STRINGS.SPACE + Math.floor(playTimeMinutes % 60) + TranslationUtil.sub("timeUnits").of("m"), modDescription, lastPlayed, configData.description)
 		    }
 		    data = null
 		}, 0)
 	    } else {
-		updateDisplayInfo(name, configData.author, (configData.size / Units.ByteSizeMap.MB) > 1000 ? (Math.round(configData.size / Units.ByteSizeMap.GB) + " GB") : (Math.floor(configData.size / Units.ByteSizeMap.MB) + " MB"), Math.floor(playTimeMinutes / 60) + TranslationUtil.sub("timeUnits").of("h") + STRINGS.SPACE + Math.floor(playTimeMinutes % 60) + TranslationUtil.sub("timeUnits").of("m"), modDescription, lastPlayed)
+		updateDisplayInfo(name, configData.author, (configData.size / Units.ByteSizeMap.MB) > 1000 ? (Math.round(configData.size / Units.ByteSizeMap.GB) + " GB") : (Math.floor(configData.size / Units.ByteSizeMap.MB) + " MB"), Math.floor(playTimeMinutes / 60) + TranslationUtil.sub("timeUnits").of("h") + STRINGS.SPACE + Math.floor(playTimeMinutes % 60) + TranslationUtil.sub("timeUnits").of("m"), modDescription, lastPlayed, configData.description)
 	    }
 
 	    if (!containsScreenshots) {
@@ -1401,7 +1385,6 @@ async function addMod(name) {
 		Hud.ofId("setinfo-header").style.left = "30rem";
 	    }
 
-	    modDescription = null
 	}
     })
 
@@ -1536,7 +1519,7 @@ function showContainers(show) {
  * @returns {void}
  */
 
-function updateDisplayInfo(mod, author, space, time, renpy, lastTime) {
+function updateDisplayInfo(mod, author, space, time, renpy, lastTime, description) {
     Hud.show("pin-holder")
     Hud.ofId("modtitle").value = formatModName(mod)
     Hud.show("modtitle");
@@ -1551,7 +1534,7 @@ function updateDisplayInfo(mod, author, space, time, renpy, lastTime) {
 	Hud.show("setinfo-header");
 	Hud.show("info");
 	if (renpy !== undefined) {
-	    Hud.ofId("info").innerHTML = renpy;
+	    Hud.ofId("info").innerHTML = descriptionHtml(description, renpy);
 	} else {
 	    Hud.ofId("info").textContent = "No Information Found!";
 	}
@@ -1654,6 +1637,7 @@ async function sendKeepAlive() {
  */
 
 async function mainTicker() {
+    if (desktopOpen) { Logger.tick(); return; }
     Hud.tick()
     DownloadsManager.tick()
     Logger.tick()
@@ -2174,68 +2158,93 @@ async function saveProfileName() {
 }
 
 async function updateClient() {
-    if (await shouldUpdate()) {
-	await Logger.sendEvent("update_launcher", {
-	    from: CLIENT_VERSION
-	})
-	Hud.setLoadingSubtitle(TranslationUtil.of("updating") + " " + PROGRAM_NAME)
-	await invoke("update_exe")
-    } else {
-	Logger.warn("Already Up To Date (" + CLIENT_VERSION + ")")
-    }
+    await openUrl(FORK_RELEASES_URL);
 }
 
 async function launchDesktop() {
+    desktopOpen = true;
     previous_app.unmount();
-    previous_app = createApp(Desktop)
+    previous_app = createApp(Desktop);
     previous_app.mount("#app");
-    const logs = Logger.instant()
-
-    for (const log in logs) {
-	const data = logs[log];
-	const holder = document.createElement("div");
-	const text = document.createElement("header");
-	const timestamp = document.createElement("header");
-	const difference = data.timestamp - CLIENT_START;
-
-	holder.classList.add("console-text-holder")
-	text.classList.add("console-text")
-	timestamp.classList.add("console-text-right")
-
-	if (data.isWarn) {
-	    holder.classList.add("console-warn")
-	}
-
-	text.innerHTML = formattedHtmlEscape(data.msg)
-	timestamp.textContent = (difference < 1000 ? difference + "ms" : (difference > 60000 ? (difference / 60000).toFixed(2) + "m" : (difference / 1000).toFixed(2) + "s"));
-
-	holder.appendChild(text);
-	holder.appendChild(timestamp);
-
-	Hud.ofId("console").appendChild(holder);
+    const logs = Logger.instant();
+    for (const data of logs) {
+        const holder = document.createElement("div");
+        const text = document.createElement("div");
+        const timestamp = document.createElement("time");
+        const difference = data.timestamp - CLIENT_START;
+        holder.className = "console-text-holder";
+        if (data.isWarn) holder.classList.add("console-warn");
+        text.className = "console-text";
+        timestamp.className = "console-text-right";
+        text.textContent = data.msg;
+        timestamp.textContent = difference < 1000 ? difference + "ms"
+            : difference > 60000 ? (difference / 60000).toFixed(2) + "m"
+            : (difference / 1000).toFixed(2) + "s";
+        holder.append(text, timestamp);
+        Hud.ofId("console").appendChild(holder);
     }
+    Hud.ofId("console").scrollTop = Hud.ofId("console").scrollHeight;
+    Hud.onClick("desktop-launch", () => window.location.reload());
+    Hud.onClick("desktop-close2", () => invoke("close"));
+    Hud.onClick("desktop-project", () => openUrl(FORK_URL));
+    Hud.onClick("desktop-releases", updateClient);
+    Hud.onClick("desktop-update", async () => {
+        const button = Hud.ofId("desktop-update");
+        button.disabled = true;
+        const status = Hud.ofId("desktop-update-status");
+        status.textContent = "Checking Kapomir fork releases…";
+        try {
+            const latest = (await getLatest()).split("\n")[0];
+            status.textContent = isNewerForkVersion(latest)
+                ? `New fork version: ${latest}. Use Open fork releases to download it.`
+                : `No newer Kapomir version found. Installed: ${CLIENT_VERSION}.`;
+        } catch (error) {
+            status.textContent = "Could not check updates. You can open fork releases in your browser.";
+            Logger.warn("Fork update check: " + error);
+        } finally {
+            button.disabled = false;
+        }
+    });
+}
 
-    Hud.ofId("console").scrollTo(0, Hud.ofId("console").scrollHeight)
-    Hud.ofId("desktop-version").textContent = PROGRAM_NAME + " " + CLIENT_VERSION
-    Hud.ofId("desktop-launch").addEventListener("mouseup", () => {
-	window.location.reload()
-    })
+async function openDescriptionEditor() {
+    if (!currentEntry || savingDescription) return;
+    const launcher = getLauncher(currentEntry);
+    if (!launcher) return;
+    descriptionTarget = currentEntry;
+    Hud.ofId("description-input").value = (await launcher.getFunctions().getData()).description ?? "";
+    Hud.show("profile-blur");
+    Hud.show("description-editor");
+    Hud.ofId("description-input").focus();
+}
 
-    Hud.ofId("desktop-close2").addEventListener("mouseup", () => {
-	invoke("close");
-    })
+function closeDescriptionEditor() {
+    if (savingDescription) return;
+    descriptionTarget = null;
+    Hud.hide("description-editor");
+    Hud.hide("profile-blur");
+}
 
-    Hud.ofId("desktop-close").addEventListener("mouseup", () => {
-	invoke("close");
-    })
-
-    Hud.ofId("desktop-update").addEventListener("mouseup", () => {
-	if (shouldUpdate()) {
-	    previous_app.unmount()
-	    createApp(App).mount("#app")
-	    updateClient()
-	}
-    })
+async function saveDescription() {
+    if (!descriptionTarget || savingDescription) return;
+    const target = descriptionTarget;
+    const launcher = getLauncher(target);
+    if (!launcher) return;
+    savingDescription = true;
+    const button = Hud.ofId("description-save");
+    button.disabled = true;
+    try {
+        await launcher.getFunctions().setDescription(Hud.ofId("description-input").value);
+        savingDescription = false;
+        closeDescriptionEditor();
+        if (currentEntry === target) await launcher.getFunctions().leftClick();
+    } catch (error) {
+        Logger.warn("Description save failed: " + error);
+        await confirm("Cannot save description:\n" + error);
+    } finally {
+        savingDescription = false;
+        button.disabled = false;
+    }
 }
 
 /**
@@ -2372,7 +2381,7 @@ async function setupIPCListeners(onLoadStartTime) {
 
 	    Logger.log("Version Check (" + (Date.now() - onLoadStartTime) + "ms).")
 
-	    if (newestReleaseVersion !== CLIENT_VERSION) {
+	    if (isNewerForkVersion(newestReleaseVersion)) {
 		Logger.warn("NOT UP TO DATE: LATEST_ONLINE_VERSION=" + newestReleaseVersion + " > " + CLIENT_VERSION + "=CLIENT_VERSION")
 		Hud.ofId("version").innerHTML = `(${CLIENT_VERSION}) <u>Update!</u>`
 		if (navigator.onLine) {
@@ -2400,41 +2409,15 @@ async function setupIPCListeners(onLoadStartTime) {
 
 		    Hud.hide("changelog")
 
-		    if (response) {
-			await updateClient()
-			return;
-		    }
+		    if (response) await updateClient();
 		} else {
 		    Logger.warn("You are currently offline. Update will not be requested.")
 		}
 	    } else {
 		Logger.log("Installed Version?: " + CLIENT_VERSION, "Latest Online Version?: " + localConfig.config.get("version"))
 		Hud.ofId("version").textContent = `(${CLIENT_VERSION})`
-		if (localConfig.config.get("version") !== CLIENT_VERSION) {
-		    if (STRINGS.isBlank(TranslationUtil.getLanguage())) {
-			forcedEnglishTranslation = true;
-		    }
-		    loadTranslation(TranslationUtil.getLanguage(), true)
-		    await saveConfig()
+                if (localConfig.config.get("version") !== CLIENT_VERSION) await saveConfig();
 
-		    Hud.show("changelog")
-		    Hud.hide("changelog-ignore")
-		    Hud.ofId("changelog-title").textContent = "Update Complete! | " + newestReleaseVersion
-		    Hud.ofId("changelog-text").innerHTML = linkify(htmlEscape(releaseNotes.split("\n").slice(1).join("\n"))).replace(/\r?\n/g, "<br>")
-		    Hud.ofId("changelog-update").textContent = TranslationUtil.of("ignore")
-		    Hud.ofId("changelog-ignore").style.setProperty("right", "calc(2rem + " + Hud.getBoundingBoxOf("changelog-update").width + "px)")
-
-		    await new Promise(resolve => {
-			Hud.ofId("changelog-update").addEventListener("mouseup", async () => {
-			    resolve(true)
-			})
-			Hud.ofId("changelog-ignore").addEventListener("mouseup", async () => {
-			    resolve(false)
-			})
-		    });
-
-		    Hud.hide("changelog")
-		}
 	    }
 
 	    Logger.log("Language (" + (Date.now() - onLoadStartTime) + "ms). Current=" + TranslationUtil.getLanguage() + " | Escaped=" + forcedEnglishTranslation)
@@ -2607,6 +2590,16 @@ async function setupIPCListeners(onLoadStartTime) {
  * @returns {Promise<void>}
  */
 async function setupHTMListeners(onLoadStartTime) {
+    Hud.onClick("description-edit", openDescriptionEditor);
+    Hud.onClick("description-cancel", closeDescriptionEditor);
+    Hud.onClick("description-save", saveDescription);
+    Hud.ofId("description-input").addEventListener("keydown", event => {
+        if (event.key === "Escape") { event.preventDefault(); closeDescriptionEditor(); }
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault(); saveDescription();
+        }
+    });
+
     Hud.onClick("save-profile", async () => {
 	Hud.hide("profile-bg")
 	await saveProfile();
@@ -3603,6 +3596,7 @@ async function setupObserver(onLoadStartTime) {
 async function onLoad() {
     const onLoadStartTime = Date.now();
 
+    document.title = PROGRAM_NAME + " — Kapomir " + CLIENT_VERSION;
     Logger.log("Initializing Launcher.");
 
     PreventDefaults.init()

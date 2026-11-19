@@ -1,0 +1,13 @@
+{
+  "version": "1.8.1-kapomir.2",
+  "repository": "Kapomir/DokiModManager",
+  "branch": "macos",
+  "upstream": "BKunzite/DokiModManager",
+  "changes": [
+    "Reliable mod renaming and custom image imports on macOS.",
+    "A clear Updates panel with separate release notes and application logs.",
+    "An image picker that fills the available width.",
+    "Editable mod descriptions with game details and credits preserved.",
+    "Consistent Kapomir fork version labels and manual fork updates."
+  ]
+}
