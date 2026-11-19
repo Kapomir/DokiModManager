@@ -1,3 +1,27 @@
+Fork release 1.8.1-kapomir.3 — 2026-11-19
+
+Launch fix: distinguish an ARM manager from an Intel game engine. Inspect the
+embedded legacy Ren'Py Mach-O engine and check Rosetta with a harmless system
+binary. Reject missing Rosetta and 32-bit-only engines before minimizing or
+starting play history. Failed launches restore the UI without marking played.
+Use /bin/sh for legacy shell entrypoints; only the exact engine may gain its
+owner execute bit. macOS launch no longer recursively chmods libraries/assets
+or automatically edits/deletes scripts.rpa. No system component is installed
+automatically by the manager. Apple: https://support.apple.com/102527
+
+Cover framing: drag, zoom 100–400%, Fill or Fit whole image, live cover and
+playing-thumbnail previews. Save adds coverFrame (source, fit, zoom, x, y) to
+the mod's existing metadata. Other fields, imported source bytes and all saves
+are retained. Cancel does not write; failed saves restore live metadata.
+Stored positions use normalized coordinates and adapt to window dimensions.
+
+Validation for this revision: 28 JavaScript checks, 9 Rust rename tests and
+5 Rust launch tests. WebKit fixtures use only synthetic images and an in-memory
+filesystem. Full native Tauri release build. Real game startup is checked only
+on isolated local copies; those games and user data are not in this repository.
+
+Previous rename/import implementation notes follow (historical validation):
+
 Fork release 1.8.1-kapomir.2 — 2026-11-19
 
 This revision also repairs the Updates layout and ticker, removes the empty

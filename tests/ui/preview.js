@@ -8,6 +8,8 @@ import "../../src/styles.css";
 import source from "../../src/main.js?raw";
 import * as images from "../../src/core/utils/ImageUtils.js";
 import {decodeImage, imageMimeType} from "../../src/core/utils/ImageFormat.js";
+import {applyCoverFrame, normalizeFrame, updateModCover} from "../../src/core/utils/CoverFrame.js";
+import {CoverCropEditor} from "../../src/core/utils/CoverCropEditor.js";
 import {importImages} from "../../src/core/utils/ImageImport.js";
 import {open} from "@tauri-apps/plugin-dialog";
 import Hud from "../../src/core/utils/HTMLHelper.js";
@@ -50,7 +52,7 @@ Hud.ofId("modtitle").value = "Synthetic Mod With A Long Editable Name";
 Hud.ofId("modinfo").textContent = "Synthetic fixture — no installed mods loaded";
 
 const env = {
-    ...images, Hud, DOMBatch, importImages, open, createApp, Desktop,
+    ...images, Hud, DOMBatch, importImages, applyCoverFrame, normalizeFrame, CoverCropEditor, coverEditor: undefined, open, createApp, Desktop,
     previous_app: fixtureApp, desktopOpen: false, CLIENT_VERSION, FORK_URL, FORK_RELEASES_URL,
     CLIENT_START: Date.now() - 5000, isNewerForkVersion, descriptionHtml,
     descriptionTarget: null, savingDescription: false,
@@ -59,7 +61,7 @@ const env = {
     invoke: async command => messages.push("IPC: " + command),
     localPath: "/fixture", fileTerminator: "/", currentEntry: "synthetic",
     currentBackgroundCover: "DefaultCovers/house.webp", importingImages: false,
-    STRINGS: {EMPTY: ""}, terminatePath: path => path.replaceAll("\\", "/"),
+    STRINGS: {EMPTY: "", isEmpty: value => value === ""}, terminatePath: path => path.replaceAll("\\", "/"),
     Optional: {readDir: async directory => ({isSome: () => true, getResult: async () =>
         [...files.keys()].filter(path => path.startsWith(directory + "/"))
             .map(path => ({name: path.slice(directory.length + 1), isDirectory: false}))})},
@@ -74,15 +76,19 @@ const env = {
             files.set("/fixture/mod/.ddmm.config.json", new TextEncoder().encode(JSON.stringify(loadedModData)));
         }),
         leftClick: async () => { Hud.ofId("info").innerHTML = descriptionHtml(loadedModData.description, "Ren’Py: synthetic<br>Credits: original author"); },
-        setCover: async id => {
-        selectedCover = images.coverIdToShortMap.get(id);
-        loadedModData.coverId = id;
-        Hud.ofId("cove").style.backgroundImage = `url("${images.preloadCovers.ofCover(id).src}")`;
-    }})}),
+        setCover: async (id, frame) => {
+            const source = images.coverIdToShortMap.get(id) ?? id;
+            await updateModCover(loadedModData, source, frame, async () => {
+                if (window.fixture?.failCoverSave) throw new Error("simulated disk failure");
+                files.set("/fixture/mod/.ddmm.config.json", new TextEncoder().encode(JSON.stringify(loadedModData)));
+            });
+            selectedCover = source;
+            applyCoverFrame(Hud.ofId("cove"), images.preloadCovers.ofCover(source), normalizeFrame(frame, source));
+        }})}),
     getLaunchers: () => ({synthetic: {getFunctions: () => ({getData: async () => loadedModData})}})
 };
 
-const names = ["syncCovers", "updateCoverImages", "selectImageFiles", "addImagesToLibrary", "updateClient", "launchDesktop", "openDescriptionEditor", "closeDescriptionEditor", "saveDescription"];
+const names = ["editCover", "syncCovers", "updateCoverImages", "selectImageFiles", "addImagesToLibrary", "updateClient", "launchDesktop", "openDescriptionEditor", "closeDescriptionEditor", "saveDescription"];
 const functions = names.map(name => {
     const start = source.search(new RegExp(`(?:async )?function ${name}\\(`));
     return source.slice(start, source.indexOf("\n}", start) + 2);
@@ -93,6 +99,7 @@ Hud.onClick("description-edit", api.openDescriptionEditor);
 Hud.onClick("description-cancel", api.closeDescriptionEditor);
 Hud.onClick("description-save", api.saveDescription);
 Hud.onClick("image-picker-import", api.selectImageFiles);
+Hud.onClick("image-picker-adjust", () => api.editCover());
 Hud.onClick("image-picker-cancel", () => {
     Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
     Hud.hide("profile-blur");

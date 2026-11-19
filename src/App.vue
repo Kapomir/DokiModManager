@@ -196,10 +196,34 @@ import {CLIENT_VERSION} from "./core/VersionHandler";
     <div class="image-picker" id="image-picker-bg">
       <div class="image-picker-toolbar">
         <button class="image-picker-import" id="image-picker-import">Import Images…</button>
+        <button class="image-picker-import" id="image-picker-adjust">Adjust current crop…</button>
         <button class="image-picker-cancel" id="image-picker-cancel">Cancel</button>
       </div>
       <div class="image-picker-items" id="image-picker-items"></div>
     </div>
+    <section class="cover-crop-editor hide" id="cover-crop-editor" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+      <h2 id="crop-title">Frame your cover</h2>
+      <p>Drag the image or use the sliders. The original image stays unchanged.</p>
+      <div class="crop-layout">
+        <div class="crop-preview-column">
+          <div id="crop-stage" aria-label="Cover crop preview"></div>
+          <div class="crop-small-preview"><div id="crop-thumbnail"></div><span>Playing thumbnail</span></div>
+        </div>
+        <div class="crop-controls">
+          <label for="crop-fit">Framing</label>
+          <select id="crop-fit"><option value="cover">Fill cover</option><option value="contain">Fit whole image</option></select>
+          <label for="crop-zoom">Zoom <output id="crop-zoom-value">100%</output></label>
+          <input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="1" />
+          <label for="crop-x">Horizontal position</label>
+          <input id="crop-x" type="range" min="0" max="1" step="0.01" value="0.5" />
+          <label for="crop-y">Vertical position</label>
+          <input id="crop-y" type="range" min="0" max="1" step="0.01" value="0.5" />
+          <button id="crop-reset">Reset framing</button>
+        </div>
+      </div>
+      <p id="crop-error" role="alert"></p>
+      <div class="crop-actions"><button id="crop-cancel">Cancel</button><button id="crop-save">Use this crop</button></div>
+    </section>
     <section class="description-editor hide" id="description-editor" role="dialog" aria-modal="true" aria-labelledby="description-editor-title">
       <h2 id="description-editor-title">Edit description</h2>
       <textarea id="description-input" maxlength="10000" placeholder="Add your own description…" aria-label="Mod description" spellcheck="true"></textarea>

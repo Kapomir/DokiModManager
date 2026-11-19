@@ -98,6 +98,28 @@ import Optional from "./core/utils/Optional";
 import WaitInterval from "./core/utils/WaitInterval";
 import {importImages} from "./core/utils/ImageImport.js";
 import {descriptionHtml, updateModDescription} from "./core/utils/ModDescription.js";
+import {applyCoverFrame, normalizeFrame, updateModCover} from "./core/utils/CoverFrame.js";
+import {CoverCropEditor} from "./core/utils/CoverCropEditor.js";
+
+let coverEditor;
+
+async function editCover(cover) {
+    if (STRINGS.isEmpty(currentEntry)) return;
+    const target = currentEntry;
+    const launcher = getLauncher(target).getFunctions();
+    const data = await launcher.getData();
+    const image = cover ? preloadCovers.get(cover) : preloadCovers.ofCover(data.coverId);
+    const source = cover ? preloadCovers.convertToShort(cover) : (coverIdToShortMap.get(data.coverId) ?? data.coverId);
+    if (!image) return;
+    if (!coverEditor?.root.isConnected) coverEditor = new CoverCropEditor();
+    const bounds = Hud.ofId("cove").getBoundingClientRect();
+    coverEditor.open({image, source, frame: data.coverFrame, aspect: bounds.width / bounds.height || .75,
+        onSave: async frame => {
+            await launcher.setCover(source, frame);
+            Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
+            Hud.hide("profile-blur");
+        }});
+}
 
 //// Profile Data
 
@@ -427,7 +449,8 @@ async function updateCoverImages(first_time = false) {
 
 	    img.addEventListener("mouseup", async (e) => {
 		if (currentEntry !== STRINGS.EMPTY && e.button === 0) {
-		    await getLauncher(currentEntry).getFunctions().setCover(covers.indexOf(cover));
+		    await editCover(cover);
+                    return;
 		} else if (e.button === 0) {
 		    currentBackgroundCover = preloadCovers.convertToShort(cover);
 		    await setCover(currentBackgroundCover)
@@ -580,7 +603,9 @@ async function setCover(id) {
     const image = preloaded?.src ?? preloadCovers.ofCover(0)?.src;
     if (!image) return;
 
-    Hud.ofId("cove").style.backgroundImage = 'url("' + image + '")';
+    const source = coverIdToShortMap.get(id) ?? id;
+    const data = STRINGS.isEmpty(currentEntry) ? null : await getLauncher(currentEntry).getFunctions().getData();
+    applyCoverFrame(Hud.ofId("cove"), preloaded ?? preloadCovers.ofCover(0), normalizeFrame(data?.coverFrame, source));
 
     if (STRINGS.isEmpty(currentEntry)) {
 	Hud.ofId("bg").style.backgroundImage = 'url("' + image + '")';
@@ -884,6 +909,7 @@ async function addMod(name) {
     }
 
     let gameExePath;
+    let launchPending = false;
     let modCredits;
     let escapedModCredits;
     let saveModData = async () => {
@@ -1139,44 +1165,37 @@ async function addMod(name) {
 
 	    await saveModData();
 	},
-	open: async () => {
-	    await Logger.sendEvent("game_launch", {
-		mod: name
-	    })
+        open: async () => {
+            if (launchPending || getIsLaunchedFlag()) return;
+            launchPending = true;
+            try {
+                if (Hud.isVoid(gameExePath)) await searchGame();
+                if (Hud.isVoid(gameExePath)) throw new Error("No game launcher was found.");
+                const path = modDirectory + fileTerminator + gameExePath;
+                // A rejected preflight must not hide the UI, start a timer, or mark the mod played.
+                await invoke("check_launch", {path});
+                showContainers(false);
+                flagModLaunched();
+                await mainTicker();
+                for (const id of ["pill", "pill-files", "pill-contains"]) Hud.show(id);
+                const image = preloadCovers.ofCover(configData.coverId) ?? preloadCovers.ofCover(0);
+                const source = coverIdToShortMap.get(configData.coverId) ?? configData.coverId;
+                applyCoverFrame(Hud.ofId("pill-profile"), image, normalizeFrame(configData.coverFrame, source));
+                await Logger.sendEvent("game_launch", {mod: name});
+                AssetsManager.Sound.play(AssetsManager.Sound.BEEP_SOUND);
+                launch_time = Date.now();
+                await invoke("launch", {path, id: name, renpy: configData.renpy || TranslationUtil.of("unknown")});
+            } catch (error) {
+                removeModLaunchedFlag();
+                for (const id of ["pill", "pill-files", "pill-contains"]) Hud.hide(id);
+                showContainers(true);
+                Logger.warn("Game launch failed: " + error);
+                await confirm("Cannot launch this mod:\n\n" + error);
+            } finally {
+                launchPending = false;
+            }
+        },
 
-	    showContainers(false)
-	    await mainTicker()
-	    flagModLaunched()
-
-	    Hud.show("pill")
-	    Hud.show("pill-files")
-	    Hud.show("pill-contains")
-
-	    if (!Hud.isVoid(preloadCovers.ofCover(configData.coverId))) {
-		Hud.ofId("pill-profile").style.backgroundImage = 'url("' + preloadCovers.ofCover(configData.coverId).src + '")';
-	    } else {
-		Hud.ofId("pill-profile").style.backgroundImage = 'url("' + preloadCovers.ofCover(0).src + '")';
-	    }
-
-	    setTimeout(async () => {
-		AssetsManager.Sound.play(AssetsManager.Sound.BEEP_SOUND)
-		launch_time = Date.now();
-		if (Hud.isVoid(configData.renpy)) {
-		    configData.renpy = await getRenpy(modDirectory);
-		    await saveModData();
-		}
-
-		if (Hud.isVoid(gameExePath) || (getOSType() === OS.TYPE.LINUX && !gameExePath.endsWith(".sh")) || (getOSType() === OS.TYPE.WINDOWS && !gameExePath.endsWith(".exe"))) {
-		    await searchGame()
-		}
-
-		await invoke("launch", {
-		    path: modDirectory + fileTerminator + gameExePath,
-		    id: name,
-		    renpy: configData.renpy || TranslationUtil.of("unknown")
-		})
-	    }, 500)
-	},
 	get_time: async () => {
 	    return Date.now() - launch_time;
 	},
@@ -1185,9 +1204,9 @@ async function addMod(name) {
 		path: modDirectory
 	    })
 	},
-	setCover: async (coverId) => {
-	    configData.coverId = coverId;
-	    await saveModData();
+	setCover: async (coverId, frame) => {
+            const source = coverIdToShortMap.get(coverId) ?? coverId;
+            await updateModCover(configData, source, frame ?? configData.coverFrame, saveModData);
 	    await setCover(configData.coverId);
 	},
 	onFavorite: async () => {
@@ -3466,6 +3485,7 @@ async function setupHTMListeners(onLoadStartTime) {
 
     Hud.onClick("importimage", selectImageFiles);
     Hud.onClick("image-picker-import", selectImageFiles);
+    Hud.onClick("image-picker-adjust", () => editCover());
 
     Hud.ofId("import").addEventListener("mouseup", async () => {
 	AssetsManager.Sound.play(AssetsManager.Sound.BEEP_SOUND)

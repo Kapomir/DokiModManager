@@ -320,7 +320,7 @@ test("version checks use the fork branch and accept a newer fork release", async
         "./utils/Logger": {default: {warn() {}}}, "../../version.json": {default: version},
         "./utils/ForkVersion.js": {isNewerForkVersion: comparator.isNewerForkVersion}
     }, {AbortController, setTimeout, clearTimeout,
-        fetch: async url => {requested = url; return {ok: true, text: async () => "1.8.1-kapomir.3\nFork notes"};}});
+        fetch: async url => {requested = url; const next = version.version.replace(/kapomir\.(\d+)$/, (_, n) => "kapomir." + (Number(n) + 1)); return {ok: true, text: async () => next + "\nFork notes"};}});
     assert.equal(await handler.shouldUpdate(), true);
     assert.equal(requested, "https://raw.githubusercontent.com/Kapomir/DokiModManager/refs/heads/macos/current_ver.txt");
     assert.equal(handler.FORK_RELEASES_URL, "https://github.com/Kapomir/DokiModManager/releases");
@@ -337,4 +337,81 @@ test("a failed or foreign-channel version response falls back to the installed f
         assert.equal((await handler.getLatest()).split("\n")[0], version.version);
         assert.equal(await handler.shouldUpdate(), false);
     }
+});
+
+const frames = await loadModule("../src/core/utils/CoverFrame.js", {});
+test("framing fills or fits a wide image without distorting its aspect ratio", () => {
+    const cover = frames.normalizeFrame(null, "wide.png");
+    const fill = frames.frameGeometry(180, 240, 800, 400, cover);
+    assert.equal(fill.width, 480);
+    assert.equal(fill.height, 240);
+    assert.equal(fill.left, -150);
+    const fit = frames.frameGeometry(180, 240, 800, 400, {...cover, fit: "contain"});
+    assert.equal(fit.width, 180);
+    assert.equal(fit.height, 90);
+    assert.equal(fit.top, 75);
+    const moved = frames.frameGeometry(180, 240, 800, 400, {...cover, x: 0, zoom: 2});
+    assert.ok(moved.left === 0);
+    assert.equal(moved.width / moved.height, 2);
+    assert.equal(frames.frameGeometry(0, 240, 800, 400, cover), null);
+});
+
+test("framing clamps corrupt metadata and does not reuse a different image's crop", () => {
+    const frame = frames.normalizeFrame({source: "a", zoom: Infinity, x: -30, y: 20, fit: "bad"}, "a");
+    assert.deepEqual({...frame}, {source: "a", zoom: 1, x: 0, y: 1, fit: "cover"});
+    const changed = frames.normalizeFrame({source: "a", zoom: 4, x: 0}, "b");
+    assert.deepEqual({...changed}, {source: "b", zoom: 1, x: .5, y: .5, fit: "cover"});
+});
+
+test("saving a frame retains every other metadata field and rolls back a failed write", async () => {
+    const config = {coverId: "old", time: 123, last_played: -1, executable: "DDLC", description: "keep", credits: "original"};
+    const original = structuredClone(config);
+    await frames.updateModCover(config, "new", {source: "new", fit: "contain", zoom: 1.25, x: .1, y: .9}, async () => {});
+    assert.deepEqual({...config, coverId: "old", coverFrame: undefined}, {...original, coverFrame: undefined});
+    const saved = structuredClone(config);
+    await assert.rejects(frames.updateModCover(config, "other", null, async () => { throw new Error("disk full"); }));
+    assert.deepEqual(structuredClone(config), saved);
+    await assert.rejects(frames.updateModCover(original, "other", null, async () => { throw new Error("disk full"); }));
+    assert.equal(Object.hasOwn(original, "coverFrame"), false);
+    assert.equal(original.coverId, "old");
+});
+
+function launchHarness(failAt) {
+    const events = [];
+    const config = {time: 123, last_played: -1, coverId: "cover", renpy: "6.99"};
+    const start = main.indexOf("        open: async () => {", main.indexOf("let launchPending = false"));
+    const end = main.indexOf("\n\tget_time:", start);
+    const open = main.slice(start, end).replace(/^\s*open: /, "").replace(/,\s*$/, "");
+    const context = vm.createContext({
+        launchPending: false, getIsLaunchedFlag: () => false, configData: config, gameExePath: "DDLC", modDirectory: "/fixture/mod", fileTerminator: "/", name: "fixture",
+        invoke: async command => { events.push(command); if (command === failAt) throw new Error("simulated launch failure"); },
+        showContainers: state => events.push(state ? "ui-restored" : "ui-hidden"),
+        flagModLaunched: () => events.push("flag-set"), removeModLaunchedFlag: () => events.push("flag-cleared"),
+        mainTicker: async () => {}, Hud: {isVoid: value => value == null, show() {}, hide() {}, ofId: () => ({})},
+        preloadCovers: {ofCover: () => ({})}, coverIdToShortMap: new Map(), applyCoverFrame() {}, normalizeFrame() {},
+        Logger: {sendEvent: async () => {}, warn() {}}, AssetsManager: {Sound: {play() {}}},
+        confirm: async message => events.push(message), TranslationUtil: {of: () => "unknown"}
+    });
+    return {run: () => vm.runInContext(`(${open})()`, context), events, config, context};
+}
+
+test("missing Rosetta preflight never starts a game, hides UI, or marks it played", async () => {
+    const h = launchHarness("check_launch");
+    await h.run();
+    assert.equal(h.events.includes("launch"), false);
+    assert.equal(h.events.includes("flag-set"), false);
+    assert.equal(h.events.includes("ui-hidden"), false);
+    assert.equal(h.config.time, 123);
+    assert.equal(h.config.last_played, -1);
+    assert.equal(h.context.launchPending, false);
+});
+
+test("a spawn failure clears playing state and preserves play history", async () => {
+    const h = launchHarness("launch");
+    await h.run();
+    assert.ok(h.events.indexOf("check_launch") < h.events.indexOf("ui-hidden"));
+    assert.ok(h.events.includes("flag-cleared") && h.events.includes("ui-restored"));
+    assert.ok(h.events.some(event => event.includes("Cannot launch this mod")));
+    assert.equal(h.config.last_played, -1);
+    assert.equal(h.config.time, 123);
 });

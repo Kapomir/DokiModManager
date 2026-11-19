@@ -52,7 +52,7 @@ try {
                 f.files.set("/selected/cover." + extension, bytes);
                 names.push("/selected/cover." + extension);
             }
-            const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="240"><rect width="120" height="240" fill="rebeccapurple"/></svg>');
+            const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="240"><rect width="120" height="80" fill="#a64c7e"/><rect y="80" width="120" height="80" fill="#574a9f"/><rect y="160" width="120" height="80" fill="#398b83"/><circle cx="25" cy="40" r="15" fill="white"/><text x="14" y="128" fill="white" font-size="16">CENTER</text></svg>');
             await f.decodeImage(svg, "cover.SVG");
             f.files.set("/selected/cover.SVG", svg);
             f.select([...names, "/selected/cover.SVG"]);
@@ -63,9 +63,55 @@ try {
         await page.waitForFunction(() => window.fixture.images.covers.length() === 10);
         const library = await page.evaluate(() => [...window.fixture.files.keys()].filter(path => path.startsWith("/fixture/")));
         assert.equal(library.length, 4);
+        const imageBytesBefore = await page.evaluate(() => [...window.fixture.files].filter(([path]) => !path.endsWith(".json")).map(([path, bytes]) => [path, Array.from(bytes)]));
         await page.locator(".image-picker-cover img").last().dispatchEvent("mouseup", {button: 0});
+        await page.locator("#cover-crop-editor").waitFor({state: "visible"});
+        assert.equal(await page.evaluate(() => window.fixture.selectedCover()), null, "Choosing an image must wait for crop approval");
+        await page.locator("#crop-fit").selectOption("contain");
+        const fitBounds = await page.evaluate(() => {
+            const stage = document.getElementById("crop-stage");
+            const [w, h] = getComputedStyle(stage).backgroundSize.split(" ").map(parseFloat);
+            return {w, h};
+        });
+        assert.ok(fitBounds.w <= 100.01 && fitBounds.h <= 100.01, "Fit mode must show the complete image");
+        await page.locator("#crop-fit").selectOption("cover");
+        await page.evaluate(() => {
+            for (const [id, value] of [["crop-zoom", "1.5"], ["crop-x", "0.2"], ["crop-y", "0.8"]]) {
+                const input = document.getElementById(id); input.value = value; input.dispatchEvent(new Event("input", {bubbles: true}));
+            }
+        });
+        const cropBounds = await page.locator("#cover-crop-editor").boundingBox();
+        assert.ok(cropBounds.x >= 0 && cropBounds.y >= 0 && cropBounds.x + cropBounds.width <= viewport.width && cropBounds.y + cropBounds.height <= viewport.height);
+        await page.screenshot({path: path.join(output, `webkit-crop-${viewport.width}x${viewport.height}.png`)});
+        await page.locator("#crop-save").click();
+        await page.locator("#cover-crop-editor").waitFor({state: "hidden"});
         const selected = await page.evaluate(() => window.fixture.selectedCover());
         assert.ok(library.some(path => path.endsWith("/" + selected)));
+        const savedFrame = await page.evaluate(() => structuredClone(window.fixture.loadedModData.coverFrame));
+        assert.deepEqual(savedFrame, {source: selected, fit: "cover", zoom: 1.5, x: .2, y: .8});
+        await page.evaluate(() => window.fixture.showPicker());
+        await page.locator("#image-picker-adjust").click();
+        assert.equal(await page.locator("#crop-zoom").inputValue(), "1.5");
+        const stage = await page.locator("#crop-stage").boundingBox();
+        await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(stage.x + stage.width / 2 + 20, stage.y + stage.height / 2 + 10);
+        await page.mouse.up();
+        assert.notEqual(await page.locator("#crop-x").inputValue(), "0.2", "Dragging must move the crop");
+        await page.locator("#crop-reset").click();
+        assert.equal(await page.locator("#crop-zoom").inputValue(), "1");
+        await page.locator("#crop-cancel").click();
+        assert.deepEqual(await page.evaluate(() => window.fixture.loadedModData.coverFrame), savedFrame, "Cancel must retain the saved frame");
+        await page.locator("#image-picker-adjust").click();
+        await page.evaluate(() => { window.fixture.failCoverSave = true; });
+        await page.locator("#crop-save").click();
+        await page.locator("#crop-error").filter({hasText: "simulated disk failure"}).waitFor();
+        assert.deepEqual(await page.evaluate(() => window.fixture.loadedModData.coverFrame), savedFrame);
+        await page.evaluate(() => { window.fixture.failCoverSave = false; });
+        await page.locator("#crop-cancel").click();
+        assert.equal(await page.evaluate(() => [...window.fixture.files.keys()].filter(path => path.startsWith("/fixture/store/images/")).length), 4, "Framing must not create or overwrite source image files");
+        assert.deepEqual(await page.evaluate(() => [...window.fixture.files].filter(([path]) => !path.endsWith(".json")).map(([path, bytes]) => [path, Array.from(bytes)])), imageBytesBefore, "Framing must retain every source image byte");
+
         await page.evaluate(() => window.fixture.showPicker());
         await page.waitForTimeout(600);
         const bounds = await page.evaluate(() => {
@@ -118,7 +164,7 @@ try {
         await page.screenshot({path: path.join(output, `webkit-description-${viewport.width}x${viewport.height}.png`)});
 
         await page.evaluate(() => window.fixture.api.launchDesktop());
-        assert.match(await page.locator("#desktop-version").textContent(), /1\.8\.1-kapomir\.2/);
+        assert.ok((await page.locator("#desktop-version").textContent()).includes(JSON.parse(await fs.readFile(new URL("../../version.json", import.meta.url))).version));
         await page.locator("#desktop-update").click();
         await page.waitForFunction(() => !document.getElementById("desktop-update").disabled);
         assert.match(await page.locator("#desktop-update-status").textContent(), /No newer Kapomir version/);

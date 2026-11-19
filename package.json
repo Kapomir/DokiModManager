@@ -1,7 +1,7 @@
 {
   "name": "dokimodmanager",
   "private": true,
-  "version": "1.8.1-kapomir.2",
+  "version": "1.8.1-kapomir.3",
   "type": "module",
   "scripts": {
     "test": "node --experimental-vm-modules --test tests/*.test.mjs",
@@ -11,7 +11,8 @@
     "build": "npm run check:version && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check:version": "node scripts/check-version.mjs"
+    "check:version": "node scripts/check-version.mjs",
+    "test:launch": "mkdir -p src-tauri/target && rustc --edition=2021 --test src-tauri/src/macos_launch.rs -o src-tauri/target/macos-launch-tests && src-tauri/target/macos-launch-tests"
   },
   "dependencies": {
     "@aptabase/tauri": "^0.4.1",

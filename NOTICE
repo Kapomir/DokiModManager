@@ -11,6 +11,8 @@ Kapomir fork modifications, 2026-11-19:
 - Separate release notes and application logs in the Updates panel.
 - Editable descriptions stored as manager metadata, preserving game files,
   technical details, original credits and all other metadata fields.
+- Apple silicon/Rosetta launch preflight and error recovery without game-content repair.
+- Per-mod cover framing with drag, zoom and fit, preserving source images.
 - Fork-specific version labels and manual updates from this fork.
 
 The original LICENSE and upstream credits are retained. Third-party artwork

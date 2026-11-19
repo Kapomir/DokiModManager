@@ -1,8 +1,9 @@
-# Kapomir macOS fork — 1.8.1-kapomir.2
+# Kapomir macOS fork — 1.8.1-kapomir.3
 
 This fork of [BKunzite/DokiModManager](https://github.com/BKunzite/DokiModManager)
 adds macOS fixes for mod renaming, custom cover imports, the image picker,
-the Updates panel, and editable mod descriptions. The original project is by
+the Updates panel, editable mod descriptions, Apple silicon launch checks,
+and non-destructive cover framing. The original project is by
 BKunzite. The original Apache-2.0 [LICENSE](LICENSE), upstream credits below,
 and the fork [NOTICE](NOTICE) are retained.
 
@@ -15,7 +16,20 @@ To edit a mod description, select the mod and click **Edit** next to
 Cancel leaves it unchanged. **Game details & credits** keeps the original
 technical information accessible. No game scripts or saves are changed.
 
-Development: `npm ci --ignore-scripts`, `npm test`, `npm run test:rename`,
+To frame a custom image, import it, select it in the cover picker, then drag
+or use Zoom/position sliders. **Fit whole image** avoids clipping logos.
+**Adjust current crop…** reopens the saved framing. **Use this crop** saves
+per-mod metadata; Cancel keeps the current cover. Imported source bytes remain
+unchanged, and the playing thumbnail uses the same framing.
+
+Older Intel Ren'Py engines require Apple's Rosetta 2 on Apple silicon.
+The manager checks this before starting a timer or minimizing. See
+[Apple's instructions](https://support.apple.com/102527). It does not install
+system software automatically. macOS launch does not delete/repair story
+archives; if an extracted engine lacks its owner execute bit, only that exact
+engine is made executable when Play is requested. Game contents are retained.
+
+Development: `npm ci --ignore-scripts`, `npm test`, `npm run test:rename`, `npm run test:launch`,
 and `npm run build`. `npm run check:version` verifies all active version
 metadata against `version.json`. See [LOCAL_MACOS_FIXES.txt](LOCAL_MACOS_FIXES.txt)
 for isolated WebKit tests and macOS build instructions.

@@ -1,10 +1,6 @@
-1.8.1-kapomir.2
-Kapomir macOS fixes
-
-- Reliable mod renaming and custom image imports on macOS.
-- A clear Updates panel with separate release notes and application logs.
-- An image picker that fills the available width.
-- Editable mod descriptions with game details and credits preserved.
-- Consistent Kapomir fork version labels and manual fork updates.
-
-Original project: BKunzite/DokiModManager. Apache-2.0.
+1.8.1-kapomir.3
+Apple silicon launch checks with clear Rosetta and 32-bit engine guidance.
+Failed launches no longer count as played games or leave the manager hidden.
+Only the required engine gains execute permission; game content is never auto-repaired.
+Adjustable cover framing: drag, zoom, fit the whole image, and preview the playing thumbnail.
+Framing is saved per mod; original imported images and all game/save data are retained.
