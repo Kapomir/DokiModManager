@@ -1,13 +1,13 @@
 {
-  "version": "1.8.1-kapomir.3",
+  "version": "1.8.1-kapomir.4",
   "repository": "Kapomir/DokiModManager",
   "branch": "macos",
   "upstream": "BKunzite/DokiModManager",
   "changes": [
-    "Apple silicon launch checks with clear Rosetta and 32-bit engine guidance.",
-    "Failed launches no longer count as played games or leave the manager hidden.",
-    "Only the required engine gains execute permission; game content is never auto-repaired.",
-    "Adjustable cover framing: drag, zoom, fit the whole image, and preview the playing thumbnail.",
-    "Framing is saved per mod; original imported images and all game/save data are retained."
+    "Fix Adjust current crop on Home as well as mod covers.",
+    "Replace background arrows with a framing editor: drag, zoom, fill or fit.",
+    "Save Home thumbnail and window background crops independently.",
+    "Keep imported image bytes, mod covers and saves unchanged.",
+    "Retain the previous Apple silicon, rename, description and Updates fixes."
   ]
 }

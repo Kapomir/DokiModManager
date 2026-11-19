@@ -44,3 +44,28 @@ export async function updateModCover(config, source, frame, persist) {
         throw error;
     }
 }
+
+// Home uses the same image at two different aspect ratios. Keep the crops independent.
+export function homeFrames(config, source) {
+    const cover = normalizeFrame(config.homeCoverFrame, source);
+    if (config.homeCoverFrame?.source !== source) cover.fit = "contain";
+    const background = normalizeFrame(config.backgroundFrame, source);
+    if (config.backgroundFrame?.source !== source && config.coverId === source) {
+        background.y = clamp(config.bg_offset, 0, 100, 0) / 100;
+    }
+    return {cover, background};
+}
+
+export async function updateHomeFrames(config, source, frames, persist) {
+    const previous = structuredClone(config);
+    config.coverId = source;
+    config.homeCoverFrame = normalizeFrame(frames.cover, source);
+    config.backgroundFrame = normalizeFrame(frames.background, source);
+    try {
+        await persist();
+    } catch (error) {
+        for (const key of Object.keys(config)) delete config[key];
+        Object.assign(config, previous);
+        throw error;
+    }
+}

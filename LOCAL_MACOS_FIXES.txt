@@ -1,3 +1,25 @@
+Fork release 1.8.1-kapomir.4 — 2026-11-19
+
+Fix the silent Home return in editCover. The editor now supports both Home and
+mods. Its real event bindings are exercised in the browser fixture, including
+Adjust current crop, direct Background entry, and selecting an image.
+Replace the Home up/down arrows and wheel handler with Background framing.
+Use independent Home thumbnail and window-background frames because their
+aspect ratios differ. The thumbnail initially fits the entire image; existing
+legacy bg_offset positions are used until explicit crop settings are saved.
+
+Home settings are stored in client-config.json (homeCoverFrame/backgroundFrame).
+Opening/cancelling does not persist anything. Failed saves restore both config
+and the selected image. Rendering uses the full window aspect ratio and retains
+framing across config reload. Mod metadata and imported image bytes are untouched.
+
+Validation: 31 JavaScript tests; WebKit at 1000x600, 1200x600, 1440x900.
+Browser checks include Home entrypoints, independent zoom/positions, legacy
+position migration, save/reload, cancellation, disk errors, source image bytes,
+and the existing mod editor, description, image import and Updates checks.
+
+Previous release implementation notes (historical validation):
+
 Fork release 1.8.1-kapomir.3 — 2026-11-19
 
 Launch fix: distinguish an ARM manager from an Intel game engine. Inspect the

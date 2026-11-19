@@ -1,4 +1,4 @@
-# Kapomir macOS fork — 1.8.1-kapomir.3
+# Kapomir macOS fork — 1.8.1-kapomir.4
 
 This fork of [BKunzite/DokiModManager](https://github.com/BKunzite/DokiModManager)
 adds macOS fixes for mod renaming, custom cover imports, the image picker,
@@ -15,6 +15,13 @@ To edit a mod description, select the mod and click **Edit** next to
 **Description**. Save commits the text to the manager's `.ddmm.config.json`;
 Cancel leaves it unchanged. **Game details & credits** keeps the original
 technical information accessible. No game scripts or saves are changed.
+
+Home framing now works from **Adjust current crop…**, image selection, or the
+**Background…** button that replaces the old up/down arrows. Switch **Editing**
+between **Home thumbnail** and **Window background** to frame them independently.
+Both crops survive restart; the Home thumbnail initially fits the entire image.
+Existing legacy background positioning is retained until you save a new crop.
+Home framing is stored only in the manager client config and never alters mods.
 
 To frame a custom image, import it, select it in the cover picker, then drag
 or use Zoom/position sliders. **Fit whole image** avoids clipping logos.

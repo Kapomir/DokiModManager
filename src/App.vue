@@ -59,8 +59,7 @@ import {CLIENT_VERSION} from "./core/VersionHandler";
     <div class="container-b smooth-hide" id="container">
       <div class="cover hide" id="cove">
         <p id="covertext"></p>
-        <div class="cover-update" style="left: 8vh;" id="cover-up">&#59982;</div>
-        <div class="cover-update" style="left: 14vh;" id="cover-down">&#59990;</div>
+        <button class="cover-background-adjust hide" id="background-adjust" title="Frame the window background">Background…</button>
         <div class="cover-update" id="cover-last">&#61000;</div>
       </div>
       <div class="covers" id="covers">
@@ -204,10 +203,11 @@ import {CLIENT_VERSION} from "./core/VersionHandler";
     <section class="cover-crop-editor hide" id="cover-crop-editor" role="dialog" aria-modal="true" aria-labelledby="crop-title">
       <h2 id="crop-title">Frame your cover</h2>
       <p>Drag the image or use the sliders. The original image stays unchanged.</p>
+      <label id="crop-target-label" class="crop-target-label hide2">Editing <select id="crop-target" aria-label="Crop target"></select></label>
       <div class="crop-layout">
         <div class="crop-preview-column">
           <div id="crop-stage" aria-label="Cover crop preview"></div>
-          <div class="crop-small-preview"><div id="crop-thumbnail"></div><span>Playing thumbnail</span></div>
+          <div class="crop-small-preview"><div id="crop-thumbnail"></div><span id="crop-thumbnail-label">Playing thumbnail</span></div>
         </div>
         <div class="crop-controls">
           <label for="crop-fit">Framing</label>

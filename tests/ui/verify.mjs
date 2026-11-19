@@ -16,6 +16,70 @@ try {
         page.on("pageerror", error => errors.push(String(error)));
         await page.goto((process.env.UI_BASE_URL || "http://127.0.0.1:1420") + "/tests/ui/preview.html");
         await page.waitForFunction(() => window.fixtureReady);
+        // The actual Home entrypoint used by the reported failure, with production event bindings.
+        await page.evaluate(() => window.fixture.goHome());
+        const homeBefore = await page.evaluate(() => structuredClone(window.fixture.homeConfig.post()));
+        await page.locator("#cover-last").click();
+        await page.locator("#image-picker-adjust").click();
+        await page.locator("#cover-crop-editor").waitFor({state: "visible"});
+        assert.equal(await page.locator("#crop-target option").count(), 2);
+        assert.equal(await page.locator("#crop-fit").inputValue(), "contain", "Home logos should initially fit whole");
+        const thumbnailRatios = await page.evaluate(() => {
+            const stage = document.getElementById("crop-stage"), cover = document.getElementById("cove");
+            return [stage.clientWidth / stage.clientHeight, cover.clientWidth / cover.clientHeight];
+        });
+        assert.ok(Math.abs(thumbnailRatios[0] - thumbnailRatios[1]) < .015, "Thumbnail preview must use layout dimensions, independent of hover transforms");
+        await page.locator("#crop-target").selectOption("background");
+        assert.equal(await page.locator("#crop-y").inputValue(), "0.35", "Preserve legacy arrow positioning when opening");
+        const stageRatio = await page.locator("#crop-stage").evaluate(stage => stage.clientWidth / stage.clientHeight);
+        assert.ok(Math.abs(stageRatio - viewport.width / viewport.height) < .03, "Background crop must use the actual window aspect ratio");
+        await page.locator("#crop-cancel").click();
+        assert.deepEqual(await page.evaluate(() => window.fixture.homeConfig.post()), homeBefore);
+        assert.equal(await page.evaluate(() => window.fixture.files.has("/fixture/client-config.json")), false, "Opening/cancelling Home framing must not save");
+        await page.locator("#image-picker-cancel").click();
+
+        // The replacement for the old up/down arrows opens background framing directly.
+        await page.locator("#background-adjust").click();
+        assert.equal(await page.locator("#crop-target").inputValue(), "background");
+        await page.evaluate(() => {
+            for (const [id, value] of [["crop-zoom", "1.4"], ["crop-x", "0.2"], ["crop-y", "0.75"]]) {
+                const input = document.getElementById(id); input.value = value; input.dispatchEvent(new Event("input", {bubbles: true}));
+            }
+        });
+        await page.locator("#crop-target").selectOption("cover");
+        assert.equal(await page.locator("#crop-zoom").inputValue(), "1", "Background zoom must not change the thumbnail");
+        await page.screenshot({path: path.join(output, `webkit-home-crop-${viewport.width}x${viewport.height}.png`)});
+        await page.locator("#crop-save").click();
+        await page.locator("#cover-crop-editor").waitFor({state: "hidden"});
+        const homeSaved = await page.evaluate(() => JSON.parse(new TextDecoder().decode(window.fixture.files.get("/fixture/client-config.json"))));
+        assert.equal(homeSaved.homeCoverFrame.fit, "contain");
+        assert.equal(homeSaved.homeCoverFrame.zoom, 1);
+        assert.equal(homeSaved.backgroundFrame.zoom, 1.4);
+        assert.equal(homeSaved.backgroundFrame.y, .75);
+        assert.equal(homeSaved.extra.keep, true);
+        const renderBefore = await page.evaluate(() => ["cove", "bg"].map(id => {
+            const element = document.getElementById(id);
+            return {size: element.style.backgroundSize, position: element.style.backgroundPosition, height: element.clientHeight};
+        }));
+        assert.equal(renderBefore[1].height, viewport.height);
+        await page.evaluate(() => window.fixture.reloadHome());
+        assert.deepEqual(await page.evaluate(() => ["cove", "bg"].map(id => {
+            const element = document.getElementById(id);
+            return {size: element.style.backgroundSize, position: element.style.backgroundPosition, height: element.clientHeight};
+        })), renderBefore, "Both crops must survive config reload");
+        await page.locator("#background-adjust").click();
+        await page.evaluate(() => { window.fixture.failHomeSave = true; });
+        await page.locator("#crop-save").click();
+        await page.locator("#crop-error").filter({hasText: "simulated Home disk failure"}).waitFor();
+        assert.deepEqual(await page.evaluate(() => window.fixture.homeConfig.post()), homeSaved);
+        await page.evaluate(() => { window.fixture.failHomeSave = false; });
+        await page.locator("#crop-cancel").click();
+        assert.ok(await page.locator("#profile-blur").evaluate(element => element.classList.contains("hide")));
+        await page.locator("#images .covers-image").first().click();
+        await page.locator("#cover-crop-editor").waitFor({state: "visible"});
+        await page.locator("#crop-cancel").click();
+        assert.deepEqual(await page.evaluate(() => window.fixture.homeConfig.post()), homeSaved, "Cancelling a different Home image preserves the current source");
+        await page.evaluate(() => window.fixture.goMod());
         await page.evaluate(() => window.fixture.showPicker());
         await page.waitForTimeout(600);
         const initial = await page.evaluate(() => {
@@ -61,7 +125,7 @@ try {
         assert.equal(decoded, 4);
         await page.locator("#image-picker-import").click();
         await page.waitForFunction(() => window.fixture.images.covers.length() === 10);
-        const library = await page.evaluate(() => [...window.fixture.files.keys()].filter(path => path.startsWith("/fixture/")));
+        const library = await page.evaluate(() => [...window.fixture.files.keys()].filter(path => path.startsWith("/fixture/store/images/")));
         assert.equal(library.length, 4);
         const imageBytesBefore = await page.evaluate(() => [...window.fixture.files].filter(([path]) => !path.endsWith(".json")).map(([path, bytes]) => [path, Array.from(bytes)]));
         await page.locator(".image-picker-cover img").last().dispatchEvent("mouseup", {button: 0});
@@ -179,11 +243,11 @@ try {
         assert.equal(await page.locator("#console .console-text-holder").count(), 30);
         await page.screenshot({path: path.join(output, `webkit-updates-${viewport.width}x${viewport.height}.png`)});
         assert.deepEqual(errors, []);
-        results.push({viewport, imagesDecoded: decoded, imported: library.length, selected, bounds, errors});
+        results.push({viewport, homeFrames: {cover: homeSaved.homeCoverFrame, background: homeSaved.backgroundFrame}, imagesDecoded: decoded, imported: library.length, selected, bounds, errors});
         await page.close();
     }
     await fs.writeFile(path.join(output, "webkit-results.json"), JSON.stringify(results, null, 2));
-    console.log(`PASS: WebKit at ${results.map(r => `${r.viewport.width}×${r.viewport.height}`).join(", ")}; images fill the picker, descriptions save/cancel safely, fork versions match, and Updates panels do not overlap.`);
+    console.log(`PASS: WebKit at ${results.map(r => `${r.viewport.width}×${r.viewport.height}`).join(", ")}; Home entrypoints open the editor, thumbnail/background crops save and reload independently, cancellation/failures preserve data, and mod framing/import/descriptions/Updates pass.`);
 } finally {
     await browser.close();
 }

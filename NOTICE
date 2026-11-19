@@ -12,6 +12,7 @@ Kapomir fork modifications, 2026-11-19:
 - Editable descriptions stored as manager metadata, preserving game files,
   technical details, original credits and all other metadata fields.
 - Apple silicon/Rosetta launch preflight and error recovery without game-content repair.
+- Independent Home thumbnail/background framing and a replacement for the old arrows.
 - Per-mod cover framing with drag, zoom and fit, preserving source images.
 - Fork-specific version labels and manual updates from this fork.
 

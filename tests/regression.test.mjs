@@ -10,7 +10,7 @@ const main = await fs.readFile(new URL("../src/main.js", import.meta.url), "utf8
 const OS = {TYPE: {WINDOWS: "windows", LINUX: "linux", MAC: "mac"}};
 
 async function loadModule(relative, dependencies, globals = {}) {
-    const context = vm.createContext({TextEncoder, crypto: globalThis.crypto, ...globals});
+    const context = vm.createContext({TextEncoder, structuredClone, crypto: globalThis.crypto, ...globals});
     const module = new vm.SourceTextModule(await fs.readFile(new URL(relative, import.meta.url), "utf8"), {context});
     await module.link(specifier => {
         const exports = dependencies[specifier];
@@ -414,4 +414,42 @@ test("a spawn failure clears playing state and preserves play history", async ()
     assert.ok(h.events.some(event => event.includes("Cannot launch this mod")));
     assert.equal(h.config.last_played, -1);
     assert.equal(h.config.time, 123);
+});
+
+test("Home framing separates portrait thumbnail from background and retains legacy position", () => {
+    const config = {coverId: "logo.png", bg_offset: 35};
+    const result = frames.homeFrames(config, "logo.png");
+    assert.equal(result.cover.fit, "contain");
+    assert.equal(result.background.fit, "cover");
+    assert.equal(result.background.y, .35);
+    assert.equal(result.cover.y, .5);
+    assert.equal(Object.hasOwn(config, "homeCoverFrame"), false);
+    assert.equal(frames.homeFrames(config, "another.png").background.y, .5);
+});
+
+test("Home saves independent crops and retains unrelated preferences", async () => {
+    const config = {coverId: "old.png", theme: "YURI", extra: {keep: true}, totalTime: 123, bg_offset: 0};
+    const crops = frames.homeFrames(config, "new.png");
+    crops.background.zoom = 1.8; crops.background.x = .2;
+    await frames.updateHomeFrames(config, "new.png", crops, async () => {});
+    assert.equal(config.homeCoverFrame.zoom, 1);
+    assert.equal(config.homeCoverFrame.fit, "contain");
+    assert.equal(config.backgroundFrame.zoom, 1.8);
+    assert.equal(config.backgroundFrame.x, .2);
+    assert.equal(config.extra.keep, true);
+    assert.equal(config.totalTime, 123);
+    assert.equal(config.theme, "YURI");
+    const reloaded = frames.homeFrames(JSON.parse(JSON.stringify(config)), "new.png");
+    assert.equal(reloaded.background.zoom, 1.8);
+    assert.equal(reloaded.cover.zoom, 1);
+});
+
+test("failed Home saves restore the entire config, including absence of new fields", async () => {
+    const config = {coverId: "old.png", theme: "YURI", extra: {keep: true}};
+    const before = structuredClone(config);
+    await assert.rejects(frames.updateHomeFrames(config, "new.png", frames.homeFrames(config, "new.png"), async () => {
+        config.theme = "changed by persist";
+        throw new Error("disk full");
+    }), /disk full/);
+    assert.deepEqual(structuredClone(config), before);
 });

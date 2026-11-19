@@ -8,7 +8,8 @@ import "../../src/styles.css";
 import source from "../../src/main.js?raw";
 import * as images from "../../src/core/utils/ImageUtils.js";
 import {decodeImage, imageMimeType} from "../../src/core/utils/ImageFormat.js";
-import {applyCoverFrame, normalizeFrame, updateModCover} from "../../src/core/utils/CoverFrame.js";
+import {applyCoverFrame, normalizeFrame, updateModCover, homeFrames, updateHomeFrames} from "../../src/core/utils/CoverFrame.js";
+import {ProgramData} from "../../src/core/utils/ConfigDataHelper.js";
 import {CoverCropEditor} from "../../src/core/utils/CoverCropEditor.js";
 import {importImages} from "../../src/core/utils/ImageImport.js";
 import {open} from "@tauri-apps/plugin-dialog";
@@ -51,8 +52,10 @@ Hud.ofId("setinfo-header").style.left = "16rem";
 Hud.ofId("modtitle").value = "Synthetic Mod With A Long Editable Name";
 Hud.ofId("modinfo").textContent = "Synthetic fixture — no installed mods loaded";
 
+const homeConfig = new ProgramData("FixtureUser").map({coverId: "DefaultCovers/house.webp", totalTime: 123,
+    version: CLIENT_VERSION, tutorial: true, language: "en", bg_offset: 35, user_name: "FixtureUser", extra: {keep: true}});
 const env = {
-    ...images, Hud, DOMBatch, importImages, applyCoverFrame, normalizeFrame, CoverCropEditor, coverEditor: undefined, open, createApp, Desktop,
+    ...images, Hud, DOMBatch, importImages, applyCoverFrame, normalizeFrame, homeFrames, updateHomeFrames, CoverCropEditor, coverEditor: undefined, open, createApp, Desktop,
     previous_app: fixtureApp, desktopOpen: false, CLIENT_VERSION, FORK_URL, FORK_RELEASES_URL,
     CLIENT_START: Date.now() - 5000, isNewerForkVersion, descriptionHtml,
     descriptionTarget: null, savingDescription: false,
@@ -61,6 +64,13 @@ const env = {
     invoke: async command => messages.push("IPC: " + command),
     localPath: "/fixture", fileTerminator: "/", currentEntry: "synthetic",
     currentBackgroundCover: "DefaultCovers/house.webp", importingImages: false,
+    currentBackgroundOffset: 35, totalPlayTime: 123, isTutorialComplete: true, currentUserName: "FixtureUser",
+    localConfig: {path: "/fixture/client-config.json", config: homeConfig},
+    TranslationUtil: {getLanguage: () => "en", of: () => "Cancel"},
+    writeTextFile: async (path, text) => {
+        if (window.fixture?.failHomeSave) throw new Error("simulated Home disk failure");
+        files.set(path, new TextEncoder().encode(text));
+    },
     STRINGS: {EMPTY: "", isEmpty: value => value === ""}, terminatePath: path => path.replaceAll("\\", "/"),
     Optional: {readDir: async directory => ({isSome: () => true, getResult: async () =>
         [...files.keys()].filter(path => path.startsWith(directory + "/"))
@@ -69,7 +79,6 @@ const env = {
         Array.from({length: 30}, (_, i) => ({msg: `Synthetic log ${i} — <not markup> ` + "long text ".repeat(10), timestamp: Date.now() - i * 10, isWarn: i % 5 === 0}))},
     confirm: async message => messages.push(message),
     AssetsManager: {Sound: {play() {}}},
-    setCover: async id => { selectedCover = id; },
     getLauncher: () => ({getFunctions: () => ({
         getData: async () => loadedModData,
         setDescription: async text => updateModDescription(loadedModData, text, async () => {
@@ -88,7 +97,7 @@ const env = {
     getLaunchers: () => ({synthetic: {getFunctions: () => ({getData: async () => loadedModData})}})
 };
 
-const names = ["editCover", "syncCovers", "updateCoverImages", "selectImageFiles", "addImagesToLibrary", "updateClient", "launchDesktop", "openDescriptionEditor", "closeDescriptionEditor", "saveDescription"];
+const names = ["editCover", "openCoverPicker", "bindCoverControls", "setCover", "saveConfig", "syncCovers", "updateCoverImages", "selectImageFiles", "addImagesToLibrary", "updateClient", "launchDesktop", "openDescriptionEditor", "closeDescriptionEditor", "saveDescription"];
 const functions = names.map(name => {
     const start = source.search(new RegExp(`(?:async )?function ${name}\\(`));
     return source.slice(start, source.indexOf("\n}", start) + 2);
@@ -99,7 +108,7 @@ Hud.onClick("description-edit", api.openDescriptionEditor);
 Hud.onClick("description-cancel", api.closeDescriptionEditor);
 Hud.onClick("description-save", api.saveDescription);
 Hud.onClick("image-picker-import", api.selectImageFiles);
-Hud.onClick("image-picker-adjust", () => api.editCover());
+api.bindCoverControls();
 Hud.onClick("image-picker-cancel", () => {
     Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
     Hud.hide("profile-blur");
@@ -108,7 +117,24 @@ Hud.onClick("image-picker-cancel", () => {
 await api.syncCovers();
 await api.updateCoverImages(true);
 window.fixture = {
-    files, messages, api, images, decodeImage, imageMimeType, loadedModData,
+    files, messages, api, images, decodeImage, imageMimeType, loadedModData, homeConfig,
+    goHome: async () => {
+        env.currentEntry = "";
+        Hud.show("background-adjust"); Hud.show("covers");
+        for (const id of ["info", "setinfo-header", "play", "path", "delete-save"]) Hud.hide(id);
+        await api.setCover(env.currentBackgroundCover);
+    },
+    goMod: async () => {
+        env.currentEntry = "synthetic";
+        Hud.hide("background-adjust"); Hud.hide("covers");
+        for (const id of ["info", "setinfo-header", "play", "path", "delete-save"]) Hud.show(id);
+        await api.setCover(loadedModData.coverId);
+    },
+    reloadHome: async () => {
+        homeConfig.setJSON(new TextDecoder().decode(files.get("/fixture/client-config.json")));
+        env.currentBackgroundCover = homeConfig.get("coverId");
+        await api.setCover(env.currentBackgroundCover);
+    },
     select: paths => { dialogSelection = paths; },
     selectedCover: () => selectedCover,
     showPicker: () => {

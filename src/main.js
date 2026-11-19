@@ -98,27 +98,64 @@ import Optional from "./core/utils/Optional";
 import WaitInterval from "./core/utils/WaitInterval";
 import {importImages} from "./core/utils/ImageImport.js";
 import {descriptionHtml, updateModDescription} from "./core/utils/ModDescription.js";
-import {applyCoverFrame, normalizeFrame, updateModCover} from "./core/utils/CoverFrame.js";
+import {applyCoverFrame, normalizeFrame, updateModCover, homeFrames, updateHomeFrames} from "./core/utils/CoverFrame.js";
 import {CoverCropEditor} from "./core/utils/CoverCropEditor.js";
 
 let coverEditor;
 
-async function editCover(cover) {
-    if (STRINGS.isEmpty(currentEntry)) return;
-    const target = currentEntry;
-    const launcher = getLauncher(target).getFunctions();
-    const data = await launcher.getData();
-    const image = cover ? preloadCovers.get(cover) : preloadCovers.ofCover(data.coverId);
-    const source = cover ? preloadCovers.convertToShort(cover) : (coverIdToShortMap.get(data.coverId) ?? data.coverId);
-    if (!image) return;
-    if (!coverEditor?.root.isConnected) coverEditor = new CoverCropEditor();
-    const bounds = Hud.ofId("cove").getBoundingClientRect();
-    coverEditor.open({image, source, frame: data.coverFrame, aspect: bounds.width / bounds.height || .75,
-        onSave: async frame => {
-            await launcher.setCover(source, frame);
-            Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
-            Hud.hide("profile-blur");
-        }});
+async function editCover(cover, target = "cover") {
+    try {
+        const isHome = STRINGS.isEmpty(currentEntry);
+        const launcher = isHome ? null : getLauncher(currentEntry).getFunctions();
+        const data = isHome ? localConfig.config.post() : await launcher.getData();
+        const id = isHome ? currentBackgroundCover : data.coverId;
+        const image = cover ? preloadCovers.get(cover) : preloadCovers.ofCover(id);
+        const source = cover ? preloadCovers.convertToShort(cover) : (coverIdToShortMap.get(id) ?? id);
+        if (!image) throw new Error("The current image is unavailable. Select another image in the picker.");
+        if (!coverEditor?.root.isConnected) coverEditor = new CoverCropEditor();
+        const coverElement = Hud.ofId("cove");
+        const aspect = coverElement.clientWidth / coverElement.clientHeight || .75;
+        const frames = isHome ? homeFrames(data, source) : null;
+        Hud.show("profile-blur");
+        coverEditor.open({image, source, frame: data.coverFrame, aspect, target,
+            targets: isHome ? {
+                cover: {label: "Home thumbnail", aspect, frame: frames.cover},
+                background: {label: "Window background", aspect: window.innerWidth / window.innerHeight, frame: frames.background}
+            } : undefined,
+            onClose: () => {
+                if (!Hud.ofId("image-picker-bg").classList.contains("image-picker-visible")) Hud.hide("profile-blur");
+            },
+            onSave: async (frame, allFrames) => {
+                if (isHome) {
+                    const previous = currentBackgroundCover;
+                    await updateHomeFrames(data, source, allFrames, async () => {
+                        currentBackgroundCover = source;
+                        try { await saveConfig(); }
+                        catch (error) { currentBackgroundCover = previous; throw error; }
+                    });
+                    await setCover(source);
+                } else {
+                    await launcher.setCover(source, frame);
+                }
+                Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
+                Hud.hide("profile-blur");
+            }});
+    } catch (error) {
+        Logger.warn("Cannot open cover editor: " + error);
+        await confirm("Cannot open cover editor:\n" + error);
+    }
+}
+
+function openCoverPicker() {
+    Hud.ofId("image-picker-cancel").textContent = TranslationUtil.of("cancel");
+    Hud.show("profile-blur");
+    Hud.ofId("image-picker-bg").classList.add("image-picker-visible");
+}
+
+function bindCoverControls() {
+    Hud.onClick("image-picker-adjust", () => editCover());
+    Hud.onClick("background-adjust", () => editCover(undefined, "background"));
+    Hud.onClick("cover-last", openCoverPicker);
 }
 
 //// Profile Data
@@ -141,7 +178,6 @@ let tutorialStep = 0;
 
 //// Config Variables
 
-let currentBackgroundMaxOffset = 0;
 let currentBackgroundOffset = 0;
 /**
  * @type {{path: string, config: ProgramData}}
@@ -447,18 +483,9 @@ async function updateCoverImages(first_time = false) {
             img.loading = "lazy";
             img.decoding = "async";
 
-	    img.addEventListener("mouseup", async (e) => {
-		if (currentEntry !== STRINGS.EMPTY && e.button === 0) {
-		    await editCover(cover);
-                    return;
-		} else if (e.button === 0) {
-		    currentBackgroundCover = preloadCovers.convertToShort(cover);
-		    await setCover(currentBackgroundCover)
-		}
-		AssetsManager.Sound.play(AssetsManager.Sound.BEEP_SOUND)
-		Hud.hide("profile-blur")
-		Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
-	    })
+            img.addEventListener("mouseup", async event => {
+                if (event.button === 0) await editCover(cover);
+            });
 
 	    div.appendChild(img);
 	    frag.appendChild(div);
@@ -484,10 +511,9 @@ async function updateCoverImages(first_time = false) {
 	    cover_text.classList.add("covers-text");
 	    cover_text.innerHTML = "&#60450;"
 
-	    cover_img.addEventListener("mouseup", () => {
-		currentBackgroundCover = coverIdToShortMap.get(i);
-		setCover(currentBackgroundCover)
-	    })
+            cover_img.addEventListener("mouseup", async event => {
+                if (event.button === 0) await editCover(covers.get(i));
+            });
 
 	    if (covers.get(i).startsWith(localPath + fileTerminator)) {
 		cover_text.addEventListener("mouseup", () => {
@@ -604,21 +630,15 @@ async function setCover(id) {
     if (!image) return;
 
     const source = coverIdToShortMap.get(id) ?? id;
-    const data = STRINGS.isEmpty(currentEntry) ? null : await getLauncher(currentEntry).getFunctions().getData();
-    applyCoverFrame(Hud.ofId("cove"), preloaded ?? preloadCovers.ofCover(0), normalizeFrame(data?.coverFrame, source));
-
+    const resolved = preloaded ?? preloadCovers.ofCover(0);
     if (STRINGS.isEmpty(currentEntry)) {
-	Hud.ofId("bg").style.backgroundImage = 'url("' + image + '")';
-	const img = new Image();
-	img.src = image;
-
-	img.onload = () => {
-	    currentBackgroundMaxOffset = img.naturalHeight * (1200 / img.naturalWidth);
-	    Hud.ofId("bg").style.height = (currentBackgroundMaxOffset) + "px";
-	    Hud.ofId("bg").style.backgroundPositionY = ((600 - currentBackgroundMaxOffset) * (currentBackgroundOffset / 100)) + "px";
-	    img.remove()
-	};
-	await saveConfig()
+        const frames = homeFrames(localConfig.config.post(), source);
+        applyCoverFrame(Hud.ofId("cove"), resolved, frames.cover);
+        Hud.ofId("bg").style.height = "100%";
+        applyCoverFrame(Hud.ofId("bg"), resolved, frames.background);
+    } else {
+        const data = await getLauncher(currentEntry).getFunctions().getData();
+        applyCoverFrame(Hud.ofId("cove"), resolved, normalizeFrame(data.coverFrame, source));
     }
 }
 
@@ -1564,8 +1584,7 @@ function updateDisplayInfo(mod, author, space, time, renpy, lastTime, descriptio
 	Hud.show("delete-save");
 	Hud.show("play");
 	Hud.hide("optionsmenu");
-	Hud.hide("cover-up");
-	Hud.hide("cover-down");
+	Hud.hide("background-adjust");
 	Hud.ofId("modinfo").innerHTML = "<span style=\"font-family: Icon,serif;\">&#62038;</span><input class='author-header' autocomplete='off' spellcheck='false' id='authinput' placeholder='" + author + "'><span style=\"font-family: Icon; padding-left: 20px;\">&#60755;</span> " + space + " <span style=\"font-family: Icon; padding-left: 20px;\">&#61966;</span> " + time + " <span style=\"font-family: Icon; padding-left: 20px;\">&#61974;</span> " + lastTime;
 	Hud.ofId("authinput").style.width = Math.min(getTextWidth(author, "normal " + AUTHOR_INPUT_SIZE + "rem Aller"), 150) + "px"
 	if (space !== "Reading...") {
@@ -1599,8 +1618,7 @@ function updateDisplayInfo(mod, author, space, time, renpy, lastTime, descriptio
 	Hud.hide("extract");
 	Hud.hide("delete-save");
 	Hud.hide("play");
-	Hud.show("cover-up");
-	Hud.show("cover-down");
+	Hud.show("background-adjust");
 	Hud.show("optionsmenu");
 	Hud.ofId("modinfo").innerHTML = "<span style=\"font-family: Icon,serif;\">&#62038;</span> Kunzite <span style=\"font-family: Icon,serif; padding-left: 20px;\">&#61966;</span> " + Math.floor(min / 60) + TranslationUtil.sub("timeUnits").of("h") + STRINGS.SPACE + (min % 60) + TranslationUtil.sub("timeUnits").of("m");
     }
@@ -2701,30 +2719,6 @@ async function setupHTMListeners(onLoadStartTime) {
 	deref(Hud.ofId("view-image").src);
     }
 
-    Hud.onClick("cover-up", () => {
-	if (currentEntry !== STRINGS.EMPTY) return;
-	if ((currentBackgroundOffset += 5) > 100) currentBackgroundOffset = 0;
-	Hud.ofId("bg").style.backgroundPositionY = ((600 - currentBackgroundMaxOffset) * (currentBackgroundOffset / 100)) + "px";
-	saveConfig();
-    })
-
-    Hud.onClick("cover-down", () => {
-	if (currentEntry !== STRINGS.EMPTY) return;
-	if ((currentBackgroundOffset -= 5) < 0) currentBackgroundOffset = 100;
-	Hud.ofId("bg").style.backgroundPositionY = ((600 - currentBackgroundMaxOffset) * (currentBackgroundOffset / 100)) + "px";
-	saveConfig();
-    })
-
-    Hud.ofId("cove").addEventListener("wheel", (e) => {
-	if (currentEntry !== STRINGS.EMPTY) return;
-	currentBackgroundOffset += e.deltaY / 20;
-	if (currentBackgroundOffset < 0) currentBackgroundOffset = 0;
-	if (currentBackgroundOffset > 100) currentBackgroundOffset = 100;
-
-	Hud.ofId("bg").style.backgroundPositionY = ((600 - currentBackgroundMaxOffset) * (currentBackgroundOffset / 100)) + "px";
-	saveConfig();
-    })
-
     Hud.onClick("load-profile", async () => {
 	await loadCurrentProfileData(true)
 	Hud.hide("profile-blur")
@@ -2738,6 +2732,7 @@ async function setupHTMListeners(onLoadStartTime) {
     })
 
     Hud.ofId("profile-blur").addEventListener("mouseup", (e) => {
+        if (coverEditor && !coverEditor.root.classList.contains("hide")) return;
 	if (Hud.ofId("image-picker-bg").classList.contains("image-picker-visible")) {
 	    Hud.ofId("image-picker-bg").classList.remove("image-picker-visible");
 	    Hud.hide("profile-blur")
@@ -3236,12 +3231,6 @@ async function setupHTMListeners(onLoadStartTime) {
 	Hud.hide("report-bg")
     })
 
-    Hud.ofId("cover-last").addEventListener("mouseup", async () => {
-	AssetsManager.Sound.play(AssetsManager.Sound.BEEP_SOUND)
-	Hud.ofId("image-picker-cancel").textContent = TranslationUtil.of("cancel");
-	Hud.show("profile-blur")
-	Hud.ofId("image-picker-bg").classList.add("image-picker-visible")
-    })
 
     Hud.ofId("close").addEventListener("mouseup", async () => {
 	exitProgram()
@@ -3485,7 +3474,7 @@ async function setupHTMListeners(onLoadStartTime) {
 
     Hud.onClick("importimage", selectImageFiles);
     Hud.onClick("image-picker-import", selectImageFiles);
-    Hud.onClick("image-picker-adjust", () => editCover());
+    bindCoverControls();
 
     Hud.ofId("import").addEventListener("mouseup", async () => {
 	AssetsManager.Sound.play(AssetsManager.Sound.BEEP_SOUND)
