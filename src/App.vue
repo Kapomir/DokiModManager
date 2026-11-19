@@ -1,3 +1,4 @@
+<!-- Modified for the local macOS fixes, 2026-11-19. -->
 <script setup>
 </script>
 
@@ -191,7 +192,11 @@
       <button class="tutorial-warn-deny" id="delete-no">No</button>
     </div>
     <div class="image-picker" id="image-picker-bg">
-      <button class="image-picker-cancel" id="image-picker-cancel">Cancel</button>
+      <div class="image-picker-toolbar">
+        <button class="image-picker-import" id="image-picker-import">Import Images…</button>
+        <button class="image-picker-cancel" id="image-picker-cancel">Cancel</button>
+      </div>
+      <div class="image-picker-items" id="image-picker-items"></div>
     </div>
     <div class="report-bg smooth-hide hide" id="report-bg">
       <header class="report-title" id="report-title">Report Issue</header>

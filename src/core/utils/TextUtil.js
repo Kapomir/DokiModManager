@@ -1,3 +1,4 @@
+// Modified for the local macOS fixes, 2026-11-19 (escaped name rendering).
 /**
  * REGEX pattern to check for HTML elements
  * @type {RegExp}
@@ -59,7 +60,7 @@ export function htmlEscape(text) {
         }
     }
 
-    if (lastIndex !== length - 1) {
+    if (lastIndex < length) {
         string += text.slice(lastIndex, length);
     }
 
@@ -114,7 +115,7 @@ export function formattedHtmlEscape(text) {
         }
     }
 
-    if (lastIndex !== length - 1) {
+    if (lastIndex < length) {
         string += text.slice(lastIndex, length);
     }
 

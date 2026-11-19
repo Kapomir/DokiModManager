@@ -1,3 +1,4 @@
+// Modified for the local macOS fixes, 2026-11-19.
 "use strict";
 //// Vue
 
@@ -75,8 +76,7 @@ import {
 import OSUtil, {DDLC_FOLDER_REGEX, getOSType, INVALID_MAC_BINARIES, OS} from "./core/utils/OSUtil";
 import {
     fileTerminator,
-    INVALID_FOLDER_CHARACTERS,
-    INVALID_FOLDER_NAMES,
+    validateName,
     supportedModPackage,
     terminatePath
 } from "./core/utils/FileSystem";
@@ -96,6 +96,7 @@ import DOMBatch from "./core/fragment/DOMBatch";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import Optional from "./core/utils/Optional";
 import WaitInterval from "./core/utils/WaitInterval";
+import {importImages} from "./core/utils/ImageImport.js";
 
 //// Profile Data
 
@@ -146,6 +147,8 @@ let ddlcSelected = false
 let selectedPath;
 let localPath;
 let observer;
+let renamingMod = false;
+let importingImages = false;
 
 
 /**
@@ -210,77 +213,83 @@ function loadTranslation(lang, first) {
  */
 
 async function syncCovers() {
-    const imageLocation = terminatePath("\\store\\images")
-
-    covers.reset().add(
-	"DefaultCovers/house.webp",
-	"DefaultCovers/wallpapers.png",
-	"DefaultCovers/natsuki.jpg",
-	"DefaultCovers/yuri.jpg",
-	"DefaultCovers/sayori.jpg",
-	"DefaultCovers/monika.png"
-    )
-
-    preloadCovers.reset()
-    let imageLoaded = 0
-    let imagePrepared = 0
-
-    for (const cover of covers.asList()) {
-	imagePrepared++
-	coverIdToShortMap.set(covers.indexOf(cover), cover)
-	shortToCoverIdMap.set(cover, covers.indexOf(cover))
-
-	new Promise(async (resolve, reject) => {
-	    try {
-		const img = await preloadImageObject(cover)
-		preloadCovers.set(cover, img, cover)
-		resolve()
-	    } catch (e) {
-		reject(e)
-	    }
-	}).then(() => {
-	    imageLoaded++
-	}).catch(() => {
-	    imageLoaded++
-	})
+    // Preserve loaded mods' cover identities before rebuilding numeric indices.
+    for (const launcher of Object.values(getLaunchers())) {
+        const data = await launcher.getFunctions().getData();
+        data.coverId = coverIdToShortMap.get(data.coverId) ?? data.coverId;
     }
-
-    const pathPrefix = localPath + imageLocation;
-    const pathOptional = await Optional.readDir(pathPrefix)
-
-    if (pathOptional.isSome()) {
-	for (const image of await pathOptional.getResult()) {
-	    if (regexImageName(image.name)) {
-		const path = localPath + imageLocation + fileTerminator + image.name;
-		covers.add(path)
-		coverIdToShortMap.set(covers.indexOf(path), image.name)
-		shortToCoverIdMap.set(image.name, covers.indexOf(path))
-		imagePrepared++
-		new Promise(async (resolve, reject) => {
-		    try {
-			const img = await preloadImageObject(path)
-			preloadCovers.set(path, img, image.name)
-			resolve()
-		    } catch (e) {
-			reject(e)
-		    }
-		}).then(() => {
-		    imageLoaded++
-		}).catch(() => {
-		    imageLoaded++
-		})
-	    }
-	}
+    const previousOrder = new Map(covers.asList().map((path, index) => [path, index]));
+    covers.reset();
+    preloadCovers.reset();
+    coverIdToShortMap.clear();
+    shortToCoverIdMap.clear();
+    const imageLocation = localPath + fileTerminator + terminatePath("store\\images");
+    const entries = [
+        "DefaultCovers/house.webp", "DefaultCovers/wallpapers.png",
+        "DefaultCovers/natsuki.jpg", "DefaultCovers/yuri.jpg",
+        "DefaultCovers/sayori.jpg", "DefaultCovers/monika.png"
+    ].map(path => ({path, short: path}));
+    const localImages = await Optional.readDir(imageLocation);
+    if (localImages.isSome()) {
+        const localEntries = await localImages.getResult();
+        // Adding files must not change the numeric IDs held by loaded mods.
+        localEntries.sort((a, b) =>
+            (previousOrder.get(imageLocation + fileTerminator + a.name) ?? Number.MAX_SAFE_INTEGER) -
+            (previousOrder.get(imageLocation + fileTerminator + b.name) ?? Number.MAX_SAFE_INTEGER));
+        for (const image of localEntries) {
+            if (!image.isDirectory && regexImageName(image.name)) {
+                entries.push({path: imageLocation + fileTerminator + image.name, short: image.name});
+            }
+        }
     }
+    const loaded = await Promise.all(entries.map(async entry => {
+        try {
+            return {...entry, image: await preloadImageObject(entry.path)};
+        } catch (error) {
+            Logger.warn("Cannot load cover: " + entry.short + " | " + error);
+            return null;
+        }
+    }));
+    for (const entry of loaded) {
+        if (!entry) continue;
+        covers.add(entry.path);
+        const id = covers.indexOf(entry.path);
+        coverIdToShortMap.set(id, entry.short);
+        shortToCoverIdMap.set(entry.short, id);
+        preloadCovers.set(entry.path, entry.image, entry.short);
+    }
+}
 
-    await new Promise(resolve => {
-	WaitInterval.waitFor((resolve2) => {
-	    if (imageLoaded === imagePrepared) {
-		resolve2()
-		resolve()
-	    }
-	}, 50)
-    })
+async function selectImageFiles() {
+    if (importingImages) return;
+    importingImages = true;
+    try {
+        const selected = await open({
+            directory: false, multiple: true, title: "Import Images",
+            filters: [{name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tif", "tiff"]}]
+        });
+        if (!selected) return;
+        await addImagesToLibrary(Array.isArray(selected) ? selected : [selected]);
+    } catch (error) {
+        Logger.warn("Image import failed: " + error);
+        await confirm("Cannot import images:\n" + error);
+    } finally {
+        importingImages = false;
+    }
+}
+
+async function addImagesToLibrary(paths) {
+    const directory = localPath + fileTerminator + terminatePath("store\\images");
+    const result = await importImages(paths, directory);
+    if (result.imported.length) {
+        await updateCoverImages();
+        Hud.show("profile-blur");
+        Hud.ofId("image-picker-bg").classList.add("image-picker-visible");
+    }
+    if (result.errors.length) {
+        Logger.warn("Image import: " + result.errors.join(" | "));
+        await confirm("Some images could not be imported:\n" + result.errors.join("\n"));
+    }
 }
 
 function onWindowFocusChanged(focus) {
@@ -401,7 +410,7 @@ async function updateCoverImages(first_time = false) {
 	}
     }
 
-    DOMBatch.batchRender("image-picker-bg", (frag) => {
+    DOMBatch.batchRender("image-picker-items", (frag) => {
 	for (const cover in preloadCovers.asList()) {
 	    let cover_img = preloadCovers.get(cover)
 	    let x = 1;
@@ -476,7 +485,7 @@ async function updateCoverImages(first_time = false) {
 		setCover(currentBackgroundCover)
 	    })
 
-	    if (i > 5) {
+	    if (covers.get(i).startsWith(localPath + fileTerminator)) {
 		cover_text.addEventListener("mouseup", () => {
 		    remove(covers.get(i));
 		    covers.splice(i, 1);
@@ -586,10 +595,9 @@ async function setCover(id) {
 	}
     }
 
-    let image = isNaN(id) ? preloadCovers.getOfShort(id).src : preloadCovers.ofCover(id).src
-    if (image === undefined) {
-	image = await getImage(id)
-    }
+    const preloaded = isNaN(id) ? preloadCovers.getOfShort(id) : preloadCovers.ofCover(id);
+    const image = preloaded?.src ?? preloadCovers.ofCover(0)?.src;
+    if (!image) return;
 
     Hud.ofId("cove").style.backgroundImage = 'url("' + image + '")';
 
@@ -1037,13 +1045,14 @@ async function addMod(name) {
     }
 
     const shorthand = formatModName(name)
+    const escapedShorthand = htmlEscape(shorthand);
     const elementId = "mod-" + name
     const indexLetter = shorthand.toLowerCase().charCodeAt(0)
     const prefixCharacterIndex = indexLetter <= 122 ? indexLetter : 0
     const sidetext = document.createElement("header");
-    const normalText = "<span style=\"font-family: Icon,serif\">&#60810;</span><span style='padding-left: 1vw'></span>" + "<span class='sidebutton-text'>" + shorthand + "</span>";
-    const favoriteText = "<span style=\"font-family: Icon,serif\">&#60938;</span><span style='padding-left: 1vw'></span>" + "<span class='sidebutton-text'>" + shorthand + "</span>";
-    const pinnedText = "<span style=\"font-family: Icon,serif\">&#61496;</span><span style='padding-left: 1vw'></span>" + "<span class='sidebutton-text'>" + shorthand + "</span>";
+    const normalText = "<span style=\"font-family: Icon,serif\">&#60810;</span><span style='padding-left: 1vw'></span>" + "<span class='sidebutton-text'>" + escapedShorthand + "</span>";
+    const favoriteText = "<span style=\"font-family: Icon,serif\">&#60938;</span><span style='padding-left: 1vw'></span>" + "<span class='sidebutton-text'>" + escapedShorthand + "</span>";
+    const pinnedText = "<span style=\"font-family: Icon,serif\">&#61496;</span><span style='padding-left: 1vw'></span>" + "<span class='sidebutton-text'>" + escapedShorthand + "</span>";
 
     let launch_time = Date.now();
 
@@ -1159,7 +1168,7 @@ async function addMod(name) {
 	    Hud.show("pill-files")
 	    Hud.show("pill-contains")
 
-	    if (!Hud.isVoid(covers.get(configData.coverId), preloadCovers.ofCover(configData.coverId))) {
+	    if (!Hud.isVoid(preloadCovers.ofCover(configData.coverId))) {
 		Hud.ofId("pill-profile").style.backgroundImage = 'url("' + preloadCovers.ofCover(configData.coverId).src + '")';
 	    } else {
 		Hud.ofId("pill-profile").style.backgroundImage = 'url("' + preloadCovers.ofCover(0).src + '")';
@@ -1685,43 +1694,55 @@ async function updateConcurrentGameInfo() {
  */
 
 async function renameMod() {
-    if (STRINGS.isEmpty(currentEntry)) return;
+    if (renamingMod || STRINGS.isEmpty(currentEntry)) return;
     const value = Hud.ofId("modtitle").value.trim();
     const name = getLauncher(currentEntry).getFunctions().getName();
-
+    const resetTitle = () => { Hud.ofId("modtitle").value = formatModName(name); };
     if (value === name || value.length === 0) {
-	Hud.ofId("modtitle").value = formatModName(currentEntry);
-	return;
+        resetTitle();
+        return;
     }
-
-    const oldName = (await getLauncher(currentEntry).getFunctions().getPath()) + fileTerminator + name;
-    const newName = (await getLauncher(currentEntry).getFunctions().getPath()) + fileTerminator + value;
-
-    if (value.length > 100 || INVALID_FOLDER_CHARACTERS.test(value) !== null || INVALID_FOLDER_NAMES.test(value) != null) {
-	await confirm("The name '" + value + "' is invalid!")
-	Hud.ofId("modtitle").value = formatModName(currentEntry);
-	return;
+    if (!validateName(value)) {
+        await confirm("The name '" + value + "' is invalid!");
+        resetTitle();
+        return;
     }
-
-    if (await isExist(await getLauncher(currentEntry).getFunctions().getPath() + fileTerminator + newName)) {
-	await confirm("Another mod with the name '" + value + "' already exists!")
-	Hud.ofId("modtitle").value = formatModName(currentEntry);
-	return;
+    if (getIsLaunchedFlag()) {
+        await confirm("Close the running game before renaming a mod.");
+        resetTitle();
+        return;
     }
-
+    renamingMod = true;
+    let renamed = false;
     try {
-	Hud.show("loader")
-	Hud.hide("main")
-	Hud.setLoadingSubtitle("Renaming Mod")
-	Hud.setLoadingBar(0, false)
-	Hud.setLoadingBar(100, true)
-	await invoke("rename_dir", {
-	    path: oldName,
-	    newName: newName,
-	    id: value
-	})
-    } catch (e) {
-	await confirm("Cannot Rename The File Due To Error:\n\n" + e)
+        const parent = await getLauncher(currentEntry).getFunctions().getPath();
+        const oldName = parent + fileTerminator + name;
+        const newName = parent + fileTerminator + value;
+        if (await isExist(newName)) {
+            await confirm("Another mod with the name '" + value + "' already exists!");
+            resetTitle();
+            return;
+        }
+        Hud.show("loader");
+        Hud.hide("main");
+        Hud.setLoadingSubtitle("Renaming Mod");
+        Hud.setLoadingBar(100, true);
+        await invoke("rename_dir", {path: oldName, newName});
+        renamed = true;
+        Logger.log("Renamed mod: " + name + " -> " + value);
+        await requestDirectory(parent);
+        const launcher = getLauncher(value);
+        if (launcher) await launcher.getFunctions().leftClick();
+        else gotoHomePage();
+    } catch (error) {
+        Logger.warn("Mod rename failed: " + error);
+        if (!renamed) resetTitle();
+        await confirm((renamed ? "The mod was renamed, but the list could not refresh. Reopen the manager.\n\n"
+            : "Cannot rename the mod:\n\n") + error);
+    } finally {
+        Hud.hide("loader");
+        Hud.show("main");
+        renamingMod = false;
     }
 }
 
@@ -2557,21 +2578,6 @@ async function setupIPCListeners(onLoadStartTime) {
 	}
     });
 
-    // Listens For Rename Finishing
-
-    await listen("rename_done", async (event) => {
-	const value = event.payload.text;
-
-	await requestDirectory(selectedPath);
-	while (Hud.isHidden("loader")) {
-	}
-
-	Logger.log(value)
-	if (getLauncher(value)) {
-	    await getLauncher(value).getFunctions().leftClick();
-	}
-    })
-
     Logger.log("Loading Drag/Drop")
 
     // Drag Drop Handling
@@ -2586,15 +2592,11 @@ async function setupIPCListeners(onLoadStartTime) {
 		Hud.show("downloads-list")
 		await importMod(path)
 	    } else if (regexImageName(path)) {
-		let dir = await readDir(localPath + fileTerminator + terminatePath("store\\images") + fileTerminator)
-		await writeFile(localPath + fileTerminator + terminatePath("store\\images\\z_image-") + (dir.length + 1) + dir.length + "." + path.split(fileTerminator).pop().split(".").pop(), await readFile(path))
+		await addImagesToLibrary([path]);
 	    } else {
 		await confirm("Unsupported Format " + (path.includes("\.") ? path.split("\.").pop() : "None") + "! {Supported: .zip, .rar, .rpa}")
 	    }
 	}
-	setTimeout(async () => {
-	    await updateCoverImages()
-	}, 1000)
     });
 }
 
@@ -3469,11 +3471,8 @@ async function setupHTMListeners(onLoadStartTime) {
 	await setTheme(CLIENT_THEME_ENUM[next], false);
     })
 
-    Hud.ofId("importimage").addEventListener("mouseup", async () => {
-	await invoke("open_path", {
-	    path: localPath + fileTerminator + terminatePath("store\\images")
-	})
-    })
+    Hud.onClick("importimage", selectImageFiles);
+    Hud.onClick("image-picker-import", selectImageFiles);
 
     Hud.ofId("import").addEventListener("mouseup", async () => {
 	AssetsManager.Sound.play(AssetsManager.Sound.BEEP_SOUND)

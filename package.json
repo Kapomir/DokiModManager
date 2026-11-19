@@ -4,6 +4,9 @@
   "version": "1.8.1",
   "type": "module",
   "scripts": {
+    "test": "node --experimental-vm-modules --test tests/*.test.mjs",
+    "test:rename": "mkdir -p src-tauri/target && rustc --edition=2021 --test src-tauri/src/mod_rename.rs -o src-tauri/target/mod-rename-tests && src-tauri/target/mod-rename-tests",
+    "test:ui": "node tests/ui/verify.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

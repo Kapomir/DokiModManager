@@ -1,3 +1,4 @@
+// Modified for the local macOS fixes, 2026-11-19 (safe mod rename).
 use dirs::{download_dir, home_dir};
 use futures_util::TryStreamExt;
 use include_dir::{include_dir, Dir};
@@ -51,6 +52,7 @@ mod constants;
 mod discord_rpc;
 mod downloader;
 mod hash;
+mod mod_rename;
 mod simple_logger;
 mod unarc_extractor;
 
@@ -1539,18 +1541,8 @@ async fn open_webview(app: AppHandle, url: &str, name: &str) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn rename_dir(app: AppHandle, path: &str, new_name: &str, id: &str) {
-    let dir = PathBuf::from(path);
-    if dir.is_dir() {
-        fs::rename(path, new_name).unwrap_or_else(|_| {
-            create_dir_all(new_name).unwrap();
-            copy_dir_recursive(&dir, &PathBuf::from(new_name)).unwrap();
-            remove_dir_all(dir).unwrap_or_else(|_| {
-                println!("Failed to remove dir Fully");
-            });
-        });
-    }
-    app.emit("rename_done", StringData { text: id }).unwrap();
+fn rename_dir(path: &str, new_name: &str) -> Result<(), String> {
+    mod_rename::rename_mod_directory(Path::new(path), Path::new(new_name))
 }
 
 fn get_pool() -> &'static ThreadPool {

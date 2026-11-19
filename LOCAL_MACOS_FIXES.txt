@@ -1,0 +1,86 @@
+Local macOS fixes — 2026-11-19
+
+Based on BKunzite/DokiModManager tag 1.8.1-release,
+commit 75619a96628c9a99886f3b6ab0e954cc789fbee4.
+Upstream main was 5fd6859 when inspected. This is a focused 1.8.1 backport,
+not an upgrade to the in-development 1.8.2 tree.
+
+License and attribution
+The original Apache-2.0 LICENSE and upstream credits are retained unchanged.
+This local derivative changes the name validation/rename flow, image import,
+thumbnail loading/layout and name rendering. It also adds isolated regression
+fixtures and npm test commands. These are local modifications, not an official
+BKunzite release. Existing third-party artwork and tool notices remain intact.
+No mods, games, saves, user logs or local account configuration are included.
+
+Root causes
+1. src/main.js renameMod compares boolean RegExp.test() results with null.
+   Both true and false are non-null, so every attempted new name is rejected.
+2. The duplicate-name check prepends the library path to an already absolute
+   target path. The old global /g regex also carries state between checks.
+3. Rust rename_dir formerly copied and deleted the source after any rename
+   error, and emitted success even if the source was not a directory.
+4. The rename_done listener had a synchronous busy-wait capable of freezing
+   the UI. Rename now uses the command Result, refreshes directly and always
+   restores the UI; concurrent renames and renames while a game runs are blocked.
+5. Import Image opened the image folder instead of a native file picker.
+6. Thumbnails were used before image decoding finished. Fixed-size picker
+   controls could overflow smaller windows. SVG/JPEG MIME types were incorrect.
+7. Resetting the image list could change the meaning of loaded numeric cover
+   IDs. Loaded cover identities now retain their existing filename before reset.
+8. Unix-valid names containing HTML syntax need escaping in sidebar labels.
+   The existing escape helper also dropped a final character after an escape.
+
+Behavior and data boundaries
+The macOS backend uses renamex_np(RENAME_EXCL): a single filesystem rename
+without overwriting an existing target, including a target created during the
+operation. It rejects symlink roots and moves to a different library.
+The entire mod directory moves with its hidden metadata, app bundle, relative
+executable path, local saves, attributes and symlinks. No game content is edited.
+External Ren'Py save directories and manager profiles remain at their existing
+paths; their internal save identifiers are not rewritten. The upstream macOS
+profile UI remains disabled. Case-only renames on case-insensitive APFS are
+reported as collisions; this patch does not migrate them via a temporary name.
+Other platforms retain the existing fs::rename API after the same prechecks;
+the atomic no-replace guarantee in this patch is specific to macOS.
+
+Images are decoded, then copied to store/images under UUID filenames using
+createNew. Source images and existing covers are never overwritten or moved.
+Cancellation is a no-op. Broken images are reported/skipped. Selecting a cover
+uses the existing .ddmm.config.json coverId format (a stable image filename).
+Drag/drop uses the same copy/decode path. The picker has an Import Images button,
+a fixed toolbar, a scrollable grid, and WebKit-editable text controls.
+
+Validation
+Node 26, Rust 1.100, Apple Silicon macOS 27.0.1:
+- npm test: 15 regression tests.
+- npm run test:rename: 9 Rust tests, using only synthetic temporary directories.
+  Covers metadata, app structure, executable permissions, symlinks, local saves,
+  external saves/profiles, collisions, missing source, relative/outside paths.
+- WebKit 26.5: 1000x600, 1200x600 and 1440x900 at deviceScaleFactor 2.
+  Covers real PNG/JPEG/WebP/SVG decoding, multi-file import, cover selection,
+  corrupt files, stable IDs, editable controls and picker bounds.
+- Frontend build and complete Tauri debug build succeed.
+The native installed app and real games were not started for these tests.
+Browser tests use an in-memory Tauri filesystem/dialog adapter, not native I/O.
+
+Reproduce tests
+npm ci --ignore-scripts
+npm test
+npm run test:rename
+
+For browser checks, use an installed Playwright package with its WebKit engine.
+In terminal 1: npm run dev -- --host 127.0.0.1
+In terminal 2: npm run test:ui
+If Playwright is outside this project, set PLAYWRIGHT_MODULE to its module URL.
+UI_OUTPUT_DIR and UI_BASE_URL can override output location and test server URL.
+
+Build a local app without starting it
+RUSTC_WRAPPER='' npm run tauri -- build --bundles app --ci --config \
+  '{"build":{"beforeBuildCommand":"npm run build"}}'
+
+RUSTC_WRAPPER='' only bypasses the upstream sccache requirement for this command.
+The npm build override avoids requiring Deno. Tauri CLI manages the macOS-only
+macos-private-api manifest feature to match the existing macOS config; this
+generated feature adjustment is not a permanent cross-platform source change.
+No macOS security settings, application entitlements or CSP permissions changed.

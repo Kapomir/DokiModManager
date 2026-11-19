@@ -4,6 +4,8 @@
   { "id": "source-text", "key": "install", "type": "textContent" },
   { "id": "import-text", "key": "import", "type": "textContent" },
   { "id": "import-image-text", "key": "import_image", "type": "textContent" },
+  { "id": "image-picker-import", "key": "import_image", "type": "textContent" },
+  { "id": "image-picker-cancel", "key": "cancel", "type": "textContent" },
   { "id": "description-text", "key": "description", "type": "textContent" },
   { "id": "screenshot-text", "key": "screenshot", "type": "textContent" },
   { "id": "download", "key": "yes", "type": "textContent" },

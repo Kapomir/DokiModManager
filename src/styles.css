@@ -1,3 +1,4 @@
+/* Modified for the local macOS fixes, 2026-11-19. */
 :root {
     --primary-color: 128, 239, 128;
     --primary-color-saturated: 118, 138, 118;
@@ -1049,6 +1050,15 @@ body {
     user-select: none;
     background: transparent;
     overflow: hidden;
+    margin: 0;
+}
+
+/* Keep native WebKit control metrics from shifting editable labels. */
+input, textarea {
+    -webkit-appearance: none;
+    appearance: none;
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 .hide {
@@ -2292,28 +2302,48 @@ body {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 54rem;
-    height: 80%;
+    box-sizing: border-box;
+    width: min(56rem, calc(100vw - 2rem));
+    height: min(85vh, calc(100vh - 2rem));
     border: none;
     transform: translate(-50%, -50%) scale(0);
     background-color: rgba(0, 0, 0, 0.7);
     border-radius: 3rem;
     z-index: 10;
-    display: grid;
+    display: flex;
+    flex-direction: column;
     padding: 1rem;
-    padding-top: 4rem;
     gap: 1rem;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: none;
-    grid-template-columns: repeat(5, 10rem);
-    grid-auto-flow: dense;
-    grid-auto-rows: 10rem;
+    overflow: hidden;
     opacity: 0;
     transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s ease-out;
     pointer-events: none;
     corner-shape: squircle;
     contain: content;
+}
+
+.image-picker-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 1rem;
+}
+
+.image-picker-items {
+    --image-tile: min(10rem, calc((100vw - 8rem) / 5));
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-flow: dense;
+    grid-auto-rows: var(--image-tile);
+    gap: 1rem;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+}
+
+.image-picker-items > .image-picker-cover {
+    width: 100%;
+    height: 100%;
 }
 
 [os-type="linux"] .image-picker {
@@ -2336,16 +2366,13 @@ body {
     transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-.image-picker-cancel {
-    position: fixed;
-    top: 0.75rem;
-    left: 50%;
-    transform: translatex(-50%);
+.image-picker-cancel, .image-picker-import {
+    flex: 1;
+    min-width: 0;
     font-family: "Aller", sans-serif;
     color: white;
     font-size: 1.5rem;
     z-index: 10;
-    width: 54rem;
     height: 2.5rem;
     border-radius: 1rem;
     background: rgba(60, 60, 60, 0.5);
@@ -2353,9 +2380,8 @@ body {
     border: none;
 }
 
-.image-picker-cancel:hover {
+.image-picker-cancel:hover, .image-picker-import:hover {
     background: rgba(60, 60, 60, 0.2);
-    transform: scale(1.1) translatex(-45.5%);
 }
 
 .image-picker-cover:hover {
