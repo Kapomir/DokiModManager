@@ -33,7 +33,10 @@
   border-radius: 1rem;
   padding: 1.25rem;
 }
-.updates-panel .release-panel { display: flex; flex-direction: column; }
+.updates-panel .release-panel { display: flex; flex-direction: column; overflow: hidden; }
+.updates-panel .release-panel h2 { flex: none; }
+.updates-panel .release-panel .release-notes { flex: 1; min-height: 0; overflow: auto; }
+.updates-panel .release-panel .updates-status, .updates-panel .release-panel .updates-actions { flex: none; }
 .updates-panel .release-notes { padding-left: 1.2rem; margin: 0; line-height: 1.5; }
 .updates-panel .release-notes li { margin-bottom: .6rem; }
 .updates-panel .updates-status { margin-top: auto; padding-top: 1rem; color: #d4c7df; line-height: 1.4; }
@@ -68,3 +71,6 @@
   .updates-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) auto; padding: 1rem; }
   .updates-panel .updates-footer { flex-wrap: wrap; }
 }
+
+.updates-panel pre.release-notes { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding-left: 0; font: inherit; }
+.updates-panel [hidden] { display: none !important; }

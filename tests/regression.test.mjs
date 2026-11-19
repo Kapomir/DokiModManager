@@ -453,3 +453,55 @@ test("failed Home saves restore the entire config, including absence of new fiel
     }), /disk full/);
     assert.deepEqual(structuredClone(config), before);
 });
+
+
+test("overlapping Play events cannot spawn a second game while launch is pending", async () => {
+    const h = launchHarness();
+    let finish;
+    h.context.invoke = async command => {
+        h.events.push(command);
+        if (command === "launch") await new Promise(resolve => { finish = resolve; });
+    };
+    const first = h.run();
+    while (!finish) await new Promise(resolve => setImmediate(resolve));
+    await h.run();
+    assert.equal(h.events.filter(event => event === "launch").length, 1);
+    assert.equal(h.context.launchPending, true);
+    finish();
+    await first;
+    assert.equal(h.context.launchPending, false);
+});
+
+async function versionHarness(fetch, timer = setTimeout) {
+    const version = JSON.parse(await fs.readFile(new URL("../version.json", import.meta.url), "utf8"));
+    const comparison = await loadModule("../src/core/utils/ForkVersion.js", {});
+    return loadModule("../src/core/VersionHandler.js", {
+        "./utils/Logger": {default: {warn() {}}}, "../../version.json": {default: version},
+        "./utils/ForkVersion.js": {isNewerForkVersion: comparison.isNewerForkVersion}
+    }, {fetch, AbortController, setTimeout: timer, clearTimeout});
+}
+
+test("explicit fork update checks use the fork channel and retain release notes", async () => {
+    let requested;
+    const version = JSON.parse(await fs.readFile(new URL("../version.json", import.meta.url), "utf8"));
+    const handler = await versionHarness(async (url, options) => {
+        requested = url; assert.ok(options.signal);
+        return {ok: true, text: async () => version.version + "\nFixture notes\n"};
+    });
+    assert.equal(await handler.getLatest({strict: true}), version.version + "\nFixture notes");
+    assert.equal(requested, "https://raw.githubusercontent.com/Kapomir/DokiModManager/refs/heads/macos/current_ver.txt");
+    assert.equal(await handler.shouldUpdate(), false);
+});
+
+test("offline startup uses local notes but a manual fork update check reports failure", async () => {
+    const handler = await versionHarness(async () => { throw new Error("offline fixture"); });
+    assert.ok((await handler.getLatest()).includes("Kapomir macOS fixes"));
+    await assert.rejects(handler.getLatest({strict: true}), /offline fixture/);
+});
+
+test("a stalled fork version endpoint is aborted", async () => {
+    const handler = await versionHarness(async (_url, {signal}) => new Promise((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("aborted fixture")), {once: true});
+    }), callback => setTimeout(callback, 5));
+    await assert.rejects(handler.getLatest({strict: true}), /aborted fixture/);
+});

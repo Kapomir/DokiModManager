@@ -2231,7 +2231,7 @@ async function launchDesktop() {
         const status = Hud.ofId("desktop-update-status");
         status.textContent = "Checking Kapomir fork releases…";
         try {
-            const latest = (await getLatest()).split("\n")[0];
+            const latest = (await getLatest({strict: true})).split("\n")[0];
             status.textContent = isNewerForkVersion(latest)
                 ? `New fork version: ${latest}. Use Open fork releases to download it.`
                 : `No newer Kapomir version found. Installed: ${CLIENT_VERSION}.`;
@@ -2249,6 +2249,7 @@ async function openDescriptionEditor() {
     const launcher = getLauncher(currentEntry);
     if (!launcher) return;
     descriptionTarget = currentEntry;
+    Hud.ofId("description-error").textContent = "";
     Hud.ofId("description-input").value = (await launcher.getFunctions().getData()).description ?? "";
     Hud.show("profile-blur");
     Hud.show("description-editor");
@@ -2270,6 +2271,7 @@ async function saveDescription() {
     savingDescription = true;
     const button = Hud.ofId("description-save");
     button.disabled = true;
+    Hud.ofId("description-error").textContent = "";
     try {
         await launcher.getFunctions().setDescription(Hud.ofId("description-input").value);
         savingDescription = false;
@@ -2277,7 +2279,7 @@ async function saveDescription() {
         if (currentEntry === target) await launcher.getFunctions().leftClick();
     } catch (error) {
         Logger.warn("Description save failed: " + error);
-        await confirm("Cannot save description:\n" + error);
+        Hud.ofId("description-error").textContent = "Cannot save description: " + error;
     } finally {
         savingDescription = false;
         button.disabled = false;

@@ -1,6 +1,7 @@
-1.8.1-kapomir.4
-Fix Adjust current crop on Home as well as mod covers.
-Replace background arrows with a framing editor: drag, zoom, fill or fit.
-Save Home thumbnail and window background crops independently.
-Keep imported image bytes, mod covers and saves unchanged.
-Retain the previous Apple silicon, rename, description and Updates fixes.
+1.8.1-kapomir.5
+Kapomir macOS fixes
+
+- Show description save failures inline and keep edits available for retry.
+- Report offline update checks instead of claiming no update is available.
+- Keep Updates headings and buttons visible while long release notes scroll.
+- Retain independent Home/background framing, safe rename and Apple silicon launch fixes.

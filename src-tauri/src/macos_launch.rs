@@ -160,4 +160,50 @@ mod tests {
         }
         assert_eq!(fs::read(&engine).unwrap(), b"unchanged");
     }
+
+    #[test]
+    fn executes_shell_launchers_with_spaces_and_reports_their_real_exit_status() {
+        let fixture = Fixture::new();
+        let directory = fixture.0.join("Mod with spaces");
+        fs::create_dir(&directory).unwrap();
+        let launcher = directory.join("DDLC");
+        let story = directory.join("story.rpa");
+        let save = directory.join("persistent");
+        for path in [&story, &save] {
+            fs::write(path, b"opaque fixture data").unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        for code in [0, 7] {
+            fs::write(&launcher, format!("#!/bin/sh\npwd\nprintf 'fixture stderr' >&2\nexit {code}\n")).unwrap();
+            fs::set_permissions(&launcher, fs::Permissions::from_mode(0o644)).unwrap();
+            let output = command(&launcher).unwrap().output().unwrap();
+            assert_eq!(output.status.code(), Some(code));
+            assert_eq!(String::from_utf8_lossy(&output.stderr), "fixture stderr");
+            assert_eq!(fs::canonicalize(String::from_utf8_lossy(&output.stdout).trim()).unwrap(), fs::canonicalize(&directory).unwrap());
+        }
+        for path in [&story, &save] {
+            assert_eq!(fs::read(path).unwrap(), b"opaque fixture data");
+            assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o644);
+        }
+    }
+
+    #[test]
+    fn unsupported_engine_is_rejected_before_any_permission_or_content_change() {
+        let fixture = Fixture::new();
+        let launcher = fixture.0.join("DDLC");
+        let engine = fixture.0.join("lib/darwin-x86_64/DDLC");
+        fs::create_dir_all(engine.parent().unwrap()).unwrap();
+        fs::write(&launcher, b"#!/bin/sh\nexit 0\n").unwrap();
+        let mut bytes = 0xfeedfaceu32.to_le_bytes().to_vec();
+        bytes.extend(X86.to_le_bytes());
+        fs::write(&engine, &bytes).unwrap();
+        for path in [&launcher, &engine] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        assert!(command(&launcher).unwrap_err().contains("32-bit"));
+        assert_eq!(fs::read(&engine).unwrap(), bytes);
+        for path in [&launcher, &engine] {
+            assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o644);
+        }
+    }
 }

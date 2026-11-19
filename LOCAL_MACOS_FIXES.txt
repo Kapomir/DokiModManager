@@ -144,3 +144,14 @@ The npm build override avoids requiring Deno. Tauri CLI manages the macOS-only
 macos-private-api manifest feature to match the existing macOS config; this
 generated feature adjustment is not a permanent cross-platform source change.
 No macOS security settings, application entitlements or CSP permissions changed.
+
+
+1.8.1-kapomir.5
+Kapomir macOS fixes
+
+- Show description save failures inline and keep edits available for retry.
+- Report offline update checks instead of claiming no update is available.
+- Keep Updates headings and buttons visible while long release notes scroll.
+- Retain independent Home/background framing, safe rename and Apple silicon launch fixes.
+
+These changes also appear without fork branding in upstream PR #9.

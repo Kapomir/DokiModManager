@@ -225,6 +225,15 @@ try {
         await page.locator("#description-input").fill("discard these edits");
         await page.locator("#description-cancel").click();
         assert.equal(await page.locator(".mod-description-text").textContent(), description);
+        await page.locator("#description-edit").click();
+        await page.locator("#description-input").fill("must not overwrite saved text");
+        await page.evaluate(() => { window.fixture.failDescriptionSave = true; });
+        await page.locator("#description-save").click();
+        await page.locator("#description-error").filter({hasText: "simulated description write failure"}).waitFor();
+        assert.equal(await page.locator("#description-save").isEnabled(), true);
+        assert.equal(await page.evaluate(() => window.fixture.loadedModData.description), description);
+        await page.locator("#description-cancel").click();
+        await page.evaluate(() => { window.fixture.failDescriptionSave = false; });
         await page.screenshot({path: path.join(output, `webkit-description-${viewport.width}x${viewport.height}.png`)});
 
         await page.evaluate(() => window.fixture.api.launchDesktop());
@@ -232,6 +241,23 @@ try {
         await page.locator("#desktop-update").click();
         await page.waitForFunction(() => !document.getElementById("desktop-update").disabled);
         assert.match(await page.locator("#desktop-update-status").textContent(), /No newer Kapomir version/);
+        await page.evaluate(() => {
+            const notes = document.querySelector(".release-notes");
+            notes.replaceChildren(...Array.from({length: 60}, () => {
+                const line = document.createElement("li"); line.textContent = "Synthetic long release note"; return line;
+            }));
+            window.fixture.failUpdateCheck = true;
+        });
+        await page.locator("#desktop-update").click();
+        await page.waitForFunction(() => !document.getElementById("desktop-update").disabled);
+        assert.match(await page.locator("#desktop-update-status").textContent(), /Could not check updates/);
+        const notesBounds = await page.evaluate(() => {
+            const panel = document.querySelector(".release-panel"), notes = panel.querySelector(".release-notes");
+            const r = panel.getBoundingClientRect(), h = panel.querySelector("h2").getBoundingClientRect();
+            const b = panel.querySelector(".updates-actions").getBoundingClientRect();
+            return {scrolls: notes.scrollHeight > notes.clientHeight, title: h.top >= r.top, buttons: b.bottom <= r.bottom};
+        });
+        assert.ok(notesBounds.scrolls && notesBounds.title && notesBounds.buttons);
         const updateBounds = await page.evaluate(() => {
             const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}; };
             return {release:rect(".release-panel"),logs:rect(".logs-panel"),header:rect(".updates-heading"),footer:rect(".updates-footer")};

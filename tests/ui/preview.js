@@ -59,7 +59,10 @@ const env = {
     previous_app: fixtureApp, desktopOpen: false, CLIENT_VERSION, FORK_URL, FORK_RELEASES_URL,
     CLIENT_START: Date.now() - 5000, isNewerForkVersion, descriptionHtml,
     descriptionTarget: null, savingDescription: false,
-    getLatest: async () => CLIENT_VERSION + "\nFixture release notes",
+    getLatest: async () => {
+        if (window.fixture?.failUpdateCheck) throw new Error("simulated offline");
+        return CLIENT_VERSION + "\nFixture release notes";
+    },
     openUrl: async url => messages.push("URL: " + url),
     invoke: async command => messages.push("IPC: " + command),
     localPath: "/fixture", fileTerminator: "/", currentEntry: "synthetic",
@@ -82,6 +85,7 @@ const env = {
     getLauncher: () => ({getFunctions: () => ({
         getData: async () => loadedModData,
         setDescription: async text => updateModDescription(loadedModData, text, async () => {
+            if (window.fixture?.failDescriptionSave) throw new Error("simulated description write failure");
             files.set("/fixture/mod/.ddmm.config.json", new TextEncoder().encode(JSON.stringify(loadedModData)));
         }),
         leftClick: async () => { Hud.ofId("info").innerHTML = descriptionHtml(loadedModData.description, "Ren’Py: synthetic<br>Credits: original author"); },

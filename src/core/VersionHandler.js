@@ -10,7 +10,7 @@ export const VERSION_URL = `https://raw.githubusercontent.com/${version.reposito
 export const LOCAL_RELEASE_NOTES = `${CLIENT_VERSION}\nKapomir macOS fixes\n\n${version.changes.map(change => "- " + change).join("\n")}`;
 export const isNewerForkVersion = candidate => compareVersions(candidate, CLIENT_VERSION);
 
-export async function getLatest() {
+export async function getLatest({strict = false} = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
@@ -22,6 +22,7 @@ export async function getLatest() {
         return notes;
     } catch (error) {
         Logger.warn("Fork version check unavailable: " + error);
+        if (strict) throw error;
         return LOCAL_RELEASE_NOTES;
     } finally {
         clearTimeout(timeout);

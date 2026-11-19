@@ -227,6 +227,7 @@ import {CLIENT_VERSION} from "./core/VersionHandler";
     <section class="description-editor hide" id="description-editor" role="dialog" aria-modal="true" aria-labelledby="description-editor-title">
       <h2 id="description-editor-title">Edit description</h2>
       <textarea id="description-input" maxlength="10000" placeholder="Add your own description…" aria-label="Mod description" spellcheck="true"></textarea>
+      <p id="description-error" role="alert"></p>
       <div class="description-editor-actions">
         <button id="description-cancel">Cancel</button>
         <button id="description-save">Save description</button>

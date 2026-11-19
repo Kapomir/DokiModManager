@@ -3021,3 +3021,7 @@ li:not(.sticky):not(.favorite) {
     font: .75rem "Aller", sans-serif; color: white; padding: .5rem .35rem;
     background: #34263dcc; border: 1px solid #bca3cc; border-radius: .6rem; cursor: pointer;
 }
+
+/* Keep closed editors out of keyboard focus and show failed saves in place. */
+.description-editor.hide { display: none; }
+#description-error { margin: 0; color: #ffb8c8; font-size: .85rem; white-space: pre-wrap; }
