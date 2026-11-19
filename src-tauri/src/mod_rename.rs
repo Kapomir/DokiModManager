@@ -66,13 +66,16 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
     struct Fixture(PathBuf);
     impl Fixture {
         fn new() -> Self {
-            let path = std::env::temp_dir().join(format!("ddmm-rename-{}-{}",
-                std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-            fs::create_dir_all(&path).unwrap();
+            let path = std::env::temp_dir().join(format!("ddmm-rename-{}-{}-{}",
+                std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+                NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)));
+            fs::create_dir(&path).unwrap();
             Self(path.canonicalize().unwrap())
         }
         fn source(&self) -> PathBuf {
